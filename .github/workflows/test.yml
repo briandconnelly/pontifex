@@ -1,0 +1,49 @@
+name: Test
+
+on:
+  workflow_call:
+
+# Least-privilege: the gate only reads the repo. Keep OIDC/environment OUT of here.
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    name: lint + types + tests (${{ matrix.os }}, py${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+        include:
+          # The orphan-sweep tests exercise `ps` portability (GNU vs BSD, -ww
+          # truncation), so at least one macOS runner is load-bearing, not a nicety.
+          - os: macos-latest
+            python-version: "3.14"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+      - name: Install dependencies
+        run: uv sync --frozen
+      - name: Check GitHub Actions are SHA-pinned
+        run: uv run python scripts/check_github_actions_pinning.py
+      - name: Lint
+        run: uv run ruff check .
+      - name: Format
+        run: uv run ruff format --check .
+      - name: Type check
+        run: uv run ty check
+      - name: One-way core dependency rule
+        run: uv run lint-imports
+      - name: Test (95% coverage floor)
+        run: uv run pytest
+      - name: Wheel builds and imports without test deps
+        run: |
+          set -euo pipefail
+          uv build --wheel
+          uv run --isolated --no-project --with dist/*.whl \
+            python -c "import pontifex.core.jobs, pontifex.core.worktree; import pontifex; print(pontifex.__version__)"
