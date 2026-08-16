@@ -74,6 +74,14 @@ class PreparedRun:
     # requested slug), so a prepare() that silently discards them cannot carry the
     # real orchestration path. Empty for backends that gate nothing.
     dropped_flags: tuple[str, ...] = ()
+    # NAMED staged paths, keyed by the same artifact names `RunOutcome.artifact_texts`
+    # uses ("last-message", "answer", "agent", ...). A freeze-window finding from the
+    # Kimi adapter: the flat `artifacts` tuple cannot tell the consumer WHICH staged
+    # file is the answer channel, and the consumer must read it back inside the
+    # prepare() context (staging is torn down on exit) to build `artifact_texts`.
+    # When both fields are set they must agree: `artifacts` enumerates exactly the
+    # values here (it remains the cleanup/enumeration view).
+    artifact_paths: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
