@@ -35,10 +35,23 @@ bridges' `_core` packages:
 **Rule:** `pontifex.core` never imports from the rest of the package.
 CI enforces this with import-linter.
 
-Planned layers (see the project plan): `pontifex.backend` (the
-`AgentBackend` protocol and `BackendContract`), `pontifex.conventions`
-(shared error taxonomy, prompts, annotations, fingerprints), and
-`pontifex.testing` (conformance and surface-honesty test kits).
+`pontifex.conventions` — the shared vocabulary bridges are built from:
+error taxonomy + repair rules (`envelope`), host-parameterized prompt
+framing (`prompts`), effect-parameterized tool annotations
+(`annotations`), CLI `--help` feature detection (`preflight`), and the
+surface-fingerprint invariant (`fingerprint`). Wire serialization stays
+in each bridge.
+
+`pontifex.backend` — **provisional** (`CONTRACT_API_VERSION = 0`): the
+`BackendContract` static-facts dataclass, the `AgentBackend` staged run
+lifecycle (`validate_request` → `prepare` → `finalize`/`classify_failure`),
+and a shared failure classifier with fixed precedence. It freezes only
+after all three real adapters pass their conformance and golden fixtures.
+
+`pontifex.testing` — importable, framework-agnostic test kit: surface
+honesty (forbidden-phrase scanning against the built wire), adapter and
+contract conformance, and sync/async tool-pair parity. Checks return
+violation lists; wire them into any harness.
 
 ## Development
 
