@@ -19,6 +19,18 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `redact`/`DiffRedactor` (key masks flow through the same staged
   `masked_paths`/`inline_masks` accounting, including withhold dominance) and to
   `redact_text`/`redact_tree`/`exc_summary`.
+- Five vendor patterns ported from the claude-in-codex bridge's local set:
+  GitHub fine-grained PAT (`github_pat_`), GitLab PAT (`glpat-`), Anthropic
+  key (`sk-ant-` — its hyphens put it out of the plain `sk-` run's reach, so
+  it is not a redundant specialization), npm automation token (`npm_`), and
+  PyPI upload token (`pypi-`). Unifying that bridge onto this engine without
+  them would have weakened its coverage; codex-in-claude and moonbridge gain
+  them outright.
+- `StreamRedactor` — a stateful line-stream redactor for callers that sanitize
+  output as it is produced (a worker scrubbing a child's stderr) and cannot
+  buffer the full sensitive stream: key-block state spans calls, and the
+  public writable `in_key_block` lets a caller that lost line fidelity
+  (overlong-line truncation) fail closed until an END marker arrives.
 - REMOVED the `-----BEGIN [A-Z ]*PRIVATE KEY-----` entry from
   `SECRET_VALUE_PATTERNS`. It masked the BEGIN marker itself while shipping the
   entire base64 body — a disclosure marker claiming coverage it did not have —

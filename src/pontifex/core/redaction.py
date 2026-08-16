@@ -449,6 +449,12 @@ SECRET_VALUE_PATTERNS = [
     CONNECTION_STRING_USERNAME_TOKEN_PATTERN,
     re.compile(r"AKIA[0-9A-Z]{16}"),
     re.compile(r"gh[pousr]_[A-Za-z0-9_]{20,}"),
+    # GitHub fine-grained PAT and GitLab PAT — ported from the claude-in-codex
+    # bridge's local pattern set during engine unification, along with the
+    # sk-ant-/npm_/pypi- entries below: unifying that bridge onto this engine
+    # without them would have WEAKENED its coverage.
+    re.compile(r"github_pat_[0-9A-Za-z_]{22,}"),
+    re.compile(r"glpat-[0-9A-Za-z_-]{20,}"),
     re.compile(r"xox[baprs]-[A-Za-z0-9-]{20,}"),
     AUTHORIZATION_BEARER_PATTERN,
     LABELLED_VALUE_PATTERN,
@@ -504,10 +510,18 @@ SECRET_VALUE_PATTERNS = [
     # Vendor key prefixes: OpenAI (sk-, sk-proj-), Stripe (sk_live_/sk_test_),
     # Google (AIza). `{n,}` rather than a fixed length so a longer/variant token
     # can't leave a trailing suffix unredacted.
+    # Anthropic key: its hyphens/underscores put it OUT of the plain `sk-` run's
+    # reach (`sk-[A-Za-z0-9]` stops at the hyphen after "ant", three chars in), so
+    # it needs its own entry — it is not a redundant specialization.
+    re.compile(r"sk-ant-[A-Za-z0-9_-]{20,}"),
     re.compile(r"sk-proj-[A-Za-z0-9_-]{20,}"),
     re.compile(r"sk-[A-Za-z0-9]{20,}"),
     re.compile(r"sk_(?:live|test)_[A-Za-z0-9]{16,}"),
     re.compile(r"AIza[0-9A-Za-z_-]{35,}"),
+    # npm automation token / PyPI upload token. `{36,}`/`{16,}` open-ended per the
+    # vendor-prefix convention above: a longer variant must not leave a tail.
+    re.compile(r"npm_[A-Za-z0-9]{36,}"),
+    re.compile(r"pypi-[A-Za-z0-9_-]{16,}"),
 ]
 
 
@@ -1052,6 +1066,36 @@ def _redact_key_blocks_in_text(text: str) -> str:
         if in_block or _PRIVATE_KEY_BEGIN_RE.search(line):
             lines[i], _, in_block = _redact_key_content(line, in_block)
     return "\n".join(lines)
+
+
+class StreamRedactor:
+    """Stateful best-effort redactor for a stream of complete text lines.
+
+    For callers that sanitize a stream AS IT IS PRODUCED (a worker scrubbing a
+    child's stderr) and so cannot buffer the full, potentially sensitive text and
+    hand it to ``redact_text``. Keeping the key-block state on the instance lets a
+    multi-line private-key block span calls; ``line`` must not include its line
+    separator — callers own separators in their own transport.
+
+    ``in_key_block`` is deliberately PUBLIC and writable: a caller that loses
+    line fidelity mid-stream (e.g. truncating an overlong line it can no longer
+    scan for a BEGIN marker) can set it ``True`` to fail closed until an END
+    marker arrives.
+
+    ``redact_line`` returns ``(emitted, changed)``; ``changed`` reports whether
+    any replacement marker was emitted for this line — a bare BEGIN/END marker
+    line transitions the block state but emits no marker, so it reports False.
+    """
+
+    def __init__(self) -> None:
+        self.in_key_block = False
+
+    def redact_line(self, line: str) -> tuple[str, bool]:
+        key_masks = 0
+        if self.in_key_block or _PRIVATE_KEY_BEGIN_RE.search(line):
+            line, key_masks, self.in_key_block = _redact_key_content(line, self.in_key_block)
+        out, value_masks = _redact_secret_values(line)
+        return out, bool(key_masks or value_masks)
 
 
 def redact_text(text: str | None) -> str | None:

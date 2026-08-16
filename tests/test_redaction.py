@@ -404,6 +404,11 @@ _QUADRATIC_SEEDS: dict[str, tuple[str, int]] = {
     redaction.CONNECTION_STRING_USERNAME_TOKEN_PATTERN.pattern: ("://x", 20000),
     r"AKIA[0-9A-Z]{16}": ("AKIA", 20000),
     r"gh[pousr]_[A-Za-z0-9_]{20,}": ("ghp_", 20000),
+    r"github_pat_[0-9A-Za-z_]{22,}": ("github_pat_", 7300),
+    r"glpat-[0-9A-Za-z_-]{20,}": ("glpat-", 13300),
+    r"sk-ant-[A-Za-z0-9_-]{20,}": ("sk-ant-", 11400),
+    r"npm_[A-Za-z0-9]{36,}": ("npm_", 20000),
+    r"pypi-[A-Za-z0-9_-]{16,}": ("pypi-", 16000),
     r"xox[baprs]-[A-Za-z0-9-]{20,}": ("xoxb-", 16000),
     r"(?i)(Authorization:\s*Bearer\s+)[A-Za-z0-9._~+/=-]{16,}": (
         "Authorization: Bearer ",
@@ -1153,6 +1158,11 @@ _IN_AUTHORITY_PAYLOADS = [
     "token=s3cr3tvalue0123456789",
     "password:s3cr3tvalue0123456789",
     "ghp_" + "a" * 20,
+    "github_pat_" + "a" * 22,
+    "glpat-" + "a" * 20,
+    "sk-ant-" + "a" * 20,
+    "npm_" + "a" * 36,
+    "pypi-" + "a" * 16,
     "xoxb-" + "a" * 20,
     "AKIA" + "ABCDEFGHIJKLMNOP",
     "eyJabcdefgh.abcdefgh.abcdefgh",
@@ -3080,3 +3090,60 @@ def test_redact_text_without_key_material_round_trips_byte_identical():
     # function DOES rewrite the text once a BEGIN marker is present.
     text = "no keys here\r\nwindows line endings survive\n\ntrailing gap\n"
     assert redaction.redact_text(text) == text
+
+
+# --- vendor patterns ported from the claude-in-codex bridge ------------------
+
+
+@pytest.mark.parametrize(
+    "token",
+    [
+        "github_pat_" + "aB3_" * 6,
+        "glpat-" + "aB3-" * 5,
+        "sk-ant-api03-" + "aB3-" * 5,
+        "npm_" + "aB3d" * 9,
+        "pypi-AgEIcHlwaS5vcmc" + "aB3d" * 4,
+    ],
+)
+def test_ported_vendor_token_is_redacted_in_prose_and_diff(token: str):
+    assert token not in redaction.redact_text(f"leaked: {token}")
+    out, paths = redaction.redact(f"diff --git a/app.py b/app.py\n+x = '{token}'\n")
+    assert token not in out
+    assert paths == ["app.py"]
+
+
+# --- StreamRedactor (stateful line stream, for stderr-style sanitization) ----
+
+
+def test_stream_redactor_carries_key_block_state_across_calls():
+    begin, end = _key_markers("RSA PRIVATE KEY")
+    r = redaction.StreamRedactor()
+    out_begin, ch_begin = r.redact_line(begin)
+    assert out_begin == begin and ch_begin is False  # marker visible, no mask emitted
+    assert r.in_key_block is True
+    out_body, ch_body = r.redact_line(_KEY_BODY)
+    assert _KEY_BODY not in out_body and ch_body is True
+    out_end, ch_end = r.redact_line(end)
+    assert out_end == end and ch_end is False
+    assert r.in_key_block is False
+
+
+def test_stream_redactor_fail_closed_flag_is_writable():
+    # A caller that truncated an overlong line it could not scan sets the flag; every
+    # following line is dropped until an END marker arrives.
+    _, end = _key_markers("PRIVATE KEY")
+    r = redaction.StreamRedactor()
+    r.in_key_block = True
+    dropped, changed = r.redact_line("could be key material")
+    assert dropped == "[redacted: secret value]" and changed is True
+    assert r.redact_line(end)[0] == end
+    assert r.in_key_block is False
+
+
+def test_stream_redactor_redacts_inline_values_and_passes_clean_lines():
+    r = redaction.StreamRedactor()
+    token = "ghp_" + "a1B2" * 6
+    out, changed = r.redact_line(f"error: bad credential {token}")
+    assert token not in out and changed is True
+    clean, unchanged = r.redact_line("ordinary stderr noise")
+    assert clean == "ordinary stderr noise" and unchanged is False
