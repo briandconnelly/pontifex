@@ -5,6 +5,20 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Hardening
+
+- `JobStore` now confines job ids to the shape it mints (`uuid4().hex`, 32
+  lowercase hex). A job id is used verbatim as a path component under the
+  workspace directory; previously a caller-supplied traversal-shaped id
+  (`../…`) reached the filesystem join, and `status`/`discard`/`cancel` could
+  read — or delete — a record-shaped directory outside the store root.
+  Defense in depth: two of the three bridges pass `job_id: str` to the store
+  unvalidated. Malformed ids now read as not-found in every public lookup
+  (`status`, `result_payload`, `discard`, `cancel` — no wire-behavior change
+  for consumers), and the `_job_dir` join itself raises as a backstop.
+  Perturbation-verified: with the guards disabled, the new traversal test
+  reaches a planted decoy record outside the store root.
+
 ### 0.5.0 (THE PROTOCOL FREEZE — `contract_api_version = 1`)
 
 - `pontifex.backend` is FROZEN. The plan's freeze criterion — all three real

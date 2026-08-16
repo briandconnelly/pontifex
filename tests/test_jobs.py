@@ -603,6 +603,11 @@ def test_kill_pid_tree_none_is_noop():
 
 
 # --- restart / PID-reuse hardening (#55) -------------------------------------
+# A store-minted shape (32 lowercase hex): fabricated records must carry an id
+# _job_dir's confinement backstop accepts.
+_JID = "1234567890abcdef1234567890abcdef"
+
+
 def _persist_job(store, cwd, job_id, *, pid, owner, **over):
     jd = store._job_dir(cwd, job_id)
     jd.mkdir(parents=True, exist_ok=True)
@@ -630,17 +635,17 @@ def test_unowned_live_pid_is_not_running(tmp_path):
     # fallback reported it running, which let cancel/timeout signal an unrelated process.
     store = _store(tmp_path)
     cwd = str(tmp_path)
-    jd, meta = _persist_job(store, cwd, "jid", pid=os.getpid(), owner="other-instance")
+    jd, meta = _persist_job(store, cwd, _JID, pid=os.getpid(), owner="other-instance")
     assert store._job_running(jd, meta) is False
 
 
 def test_unowned_live_pid_status_does_not_signal(tmp_path, monkeypatch):
     store = _store(tmp_path)
     cwd = str(tmp_path)
-    _persist_job(store, cwd, "jid", pid=os.getpid(), owner="other-instance")
+    _persist_job(store, cwd, _JID, pid=os.getpid(), owner="other-instance")
     calls = []
     monkeypatch.setattr(jobs, "_terminate_pid_tree", lambda *a, **k: calls.append(a))
-    st = store.status(cwd, "jid")
+    st = store.status(cwd, _JID)
     assert st["status"] != "running"  # not reported as the running worker
     assert calls == []  # and never signaled
 
@@ -733,7 +738,7 @@ def test_lock_held_marks_unowned_job_running(tmp_path):
 
     store = _store(tmp_path)
     cwd = str(tmp_path)
-    jd, meta = _persist_job(store, cwd, "jid", pid=os.getpid(), owner="other-instance")
+    jd, meta = _persist_job(store, cwd, _JID, pid=os.getpid(), owner="other-instance")
     lock = jd / "worker.lock"
     lock.write_bytes(b"")
     fd = os.open(str(lock), os.O_RDONLY)
@@ -1444,3 +1449,94 @@ def test_start_without_stdin_text_gives_worker_devnull(tmp_path: Path):
     while time.time() < deadline and not marker.exists():
         time.sleep(0.05)
     assert marker.read_text() == "''"  # DEVNULL: immediate EOF, no hang
+
+
+# ---------------------------------------------------------------- job-id confinement
+
+
+def _plant_decoy_record(decoy: Path) -> None:
+    """A directory shaped exactly like a live done job record. terminal_status is
+    set and completed_epoch is fresh (not expired), so an unguarded store that
+    reaches it would REPORT it via status() and DELETE it via discard()."""
+    decoy.mkdir(parents=True)
+    now = time.time()
+    (decoy / "meta.json").write_text(
+        json.dumps(
+            {
+                "job_id": decoy.name,
+                "kind": "consult",
+                "terminal_status": "done",
+                "result_ok": True,
+                "started_epoch": now - 5,
+                "completed_epoch": now,
+                "started_at": "2026-01-01T00:00:00+00:00",
+            }
+        )
+    )
+    (decoy / "result.json").write_text(json.dumps({"ok": True, "tool": "t"}))
+
+
+def test_traversal_job_id_cannot_reach_records_outside_the_store(tmp_path: Path):
+    """A job id is used verbatim as a path component, so a traversal-shaped id must
+    read as not-found — never resolve to (or delete) a record outside the store."""
+    store = _store(tmp_path)
+    cwd = str(tmp_path / "workspace")
+    Path(cwd).mkdir()
+    ws = store._ws_dir(cwd)
+    ws.mkdir(parents=True)
+
+    decoy = tmp_path / "outside" / "decoy"
+    _plant_decoy_record(decoy)
+    traversal_id = os.path.relpath(decoy, ws)
+
+    # Instrument check: the unguarded join really does resolve to the decoy record,
+    # so the not-found assertions below could have failed (and do, if the guard is
+    # removed — status() would report the decoy and discard() would delete it).
+    assert (ws / traversal_id / "meta.json").resolve() == (decoy / "meta.json").resolve()
+    assert (ws / traversal_id / "meta.json").is_file()
+
+    assert store.status(cwd, traversal_id) is None
+    assert store.result_payload(cwd, traversal_id) == (None, None)
+    assert store.cancel(cwd, traversal_id) is None
+    assert store.discard(cwd, traversal_id) is DiscardOutcome.MISSING
+
+    # The decoy record is untouched.
+    assert (decoy / "meta.json").is_file()
+    assert (decoy / "result.json").is_file()
+
+
+@pytest.mark.parametrize(
+    "bad_id",
+    [
+        "",
+        "abc",
+        "0123456789abcdef0123456789abcde",  # 31 chars
+        "0123456789abcdef0123456789abcdef0",  # 33 chars
+        "0123456789ABCDEF0123456789ABCDEF",  # uppercase: never minted
+        "0123456789abcdef/123456789abcdef",  # separator
+        "..",
+    ],
+)
+def test_malformed_job_ids_read_as_not_found_everywhere(tmp_path: Path, bad_id: str):
+    """Every public lookup screens the id shape before the filesystem join; a
+    malformed id is by construction not a job this store started."""
+    store = _store(tmp_path)
+    cwd = str(tmp_path)
+    assert store.status(cwd, bad_id) is None
+    assert store.result_payload(cwd, bad_id) == (None, None)
+    assert store.cancel(cwd, bad_id) is None
+    assert store.discard(cwd, bad_id) is DiscardOutcome.MISSING
+
+
+def test_job_dir_raises_on_malformed_id(tmp_path: Path):
+    """The join itself is the backstop: no internal path can put a non-minted
+    shape on the filesystem even if a future caller skips the screen."""
+    store = _store(tmp_path)
+    with pytest.raises(ValueError, match="32 lowercase hexadecimal"):
+        store._job_dir(str(tmp_path), "../escape")
+
+
+def test_job_dir_accepts_the_minted_shape(tmp_path: Path):
+    store = _store(tmp_path)
+    jd = store._job_dir(str(tmp_path), "0123456789abcdef0123456789abcdef")
+    assert jd.name == "0123456789abcdef0123456789abcdef"

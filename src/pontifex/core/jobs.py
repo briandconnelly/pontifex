@@ -44,6 +44,7 @@ import json
 import logging
 import math
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -66,6 +67,13 @@ _IDEM_DIRNAME = ".idem"
 
 _TERMINAL = frozenset({"done", "failed", "cancelled", "timeout"})
 _LOCK = threading.RLock()
+
+# The only job-id shape this store ever mints (``uuid4().hex``). A job id is used
+# verbatim as a path component under the workspace directory, so its shape is
+# confined at the join: anything else (separators, traversal, empty) must never
+# reach the filesystem. Consumers validating ids at their own boundary should pin
+# the same shape.
+_JOB_ID_RE = re.compile(r"[0-9a-f]{32}")
 
 
 class DiscardOutcome(StrEnum):
@@ -338,6 +346,11 @@ class JobStore:
         return self.root / f"{safe}-{digest}"
 
     def _job_dir(self, cwd: str, job_id: str) -> Path:
+        # Backstop, not the caller-facing contract: _read_live_job screens
+        # caller-supplied ids to not-found before reaching this join, and start()
+        # mints its own, so a raise here means a store-internal programming error.
+        if _JOB_ID_RE.fullmatch(job_id) is None:
+            raise ValueError("job_id must be exactly 32 lowercase hexadecimal characters")
         return self._ws_dir(cwd) / job_id
 
     def _job_dirs(self, ws: Path) -> list[Path]:
@@ -751,6 +764,10 @@ class JobStore:
     # ----------------------------------------------------------- maintenance
     def _read_live_job(self, cwd: str, job_id: str) -> tuple[Path, dict, str] | None:
         """Read + refresh a single record; drop it if terminal and expired."""
+        if _JOB_ID_RE.fullmatch(job_id) is None:
+            # A malformed id (wrong shape, traversal, empty) is by construction not a
+            # job this store started: report not-found without touching the filesystem.
+            return None
         jd = self._job_dir(cwd, job_id)
         meta = self._read_meta(jd)
         if meta is None:
