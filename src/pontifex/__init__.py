@@ -10,6 +10,6 @@ Anything not documented as public is internal and may change without notice.
 
 from __future__ import annotations
 
-__version__ = "0.3.0.dev0"
+__version__ = "0.5.0.dev0"
 
 __all__ = ["__version__"]
