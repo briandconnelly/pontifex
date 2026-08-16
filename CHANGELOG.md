@@ -5,6 +5,25 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### 0.3.0 (protocol feedback from the three real adapters — still PROVISIONAL)
+
+- `RunOutcome.events` is now an OPAQUE raw payload string instead of parsed
+  event dicts. The Codex adapter showed that typed dicts forced eager parsing
+  upstream of the tolerance boundary — real normalize layers must parse
+  tolerantly so a malformed line degrades instead of raising. Its docs also now
+  state that a backend may use neither the events nor the artifacts channel
+  (the Claude adapter reads everything from the stdout envelope).
+- `BackendContract.effort_validation` (defaulted, non-breaking) declares how
+  pre-spend effort validation works: `enumerated` (Claude),
+  `token_floor_plus_catalog` (Kimi — universal token floor, catalog-relative
+  refinement, failing OPEN when the catalog cannot answer), or `shape_only`
+  (Codex — upstream rejects bad values loudly; only argv-hostile shapes are
+  refused locally).
+- Deferred to the freeze window, recorded from adapter findings: a shared seam
+  for the prompt-append schema-instruction text (currently duplicated in the
+  Kimi bridge under a byte-parity test), and classification's ambient
+  extra-args context.
+
 ### 0.2.0 (milestone M1 — conventions + provisional protocol)
 
 - `pontifex.conventions.envelope`: shared error taxonomy — universal codes

@@ -15,6 +15,12 @@ from enum import Enum
 from typing import Literal
 
 Authority = Literal["advisory", "authoritative"]
+# How a backend's pre-spend effort validation works (0.3.0, from the Kimi adapter):
+# "enumerated" — a fixed value set is checked locally; "token_floor_plus_catalog" —
+# a universal token vocabulary is the floor and the live catalog refines it,
+# failing OPEN when the catalog cannot answer; "shape_only" — only argv-hostile
+# shapes are refused locally because upstream rejects bad values loudly itself.
+EffortValidation = Literal["enumerated", "token_floor_plus_catalog", "shape_only"]
 CatalogStrategy = Literal["static", "cache_with_static_fallback", "live_probe"]
 StructuredOutputStrategy = Literal["argv_flag", "prompt_append"]
 
@@ -112,6 +118,7 @@ class BackendContract:
     isolation_policy: IsolationPolicy
     needs_orphan_sweep: bool
     effort_silently_ignored_upstream: bool  # True => validate_request MUST check effort pre-spend
+    effort_validation: EffortValidation = "enumerated"  # how that pre-spend check works
     usage_event_markers: tuple[str, ...] = ()  # empty: this backend emits no usage events
     extra_args: ExtraArgsPolicy = field(default_factory=ExtraArgsPolicy)
     failure_signatures: FailureSignatures = field(default_factory=FailureSignatures)

@@ -72,12 +72,20 @@ class PreparedRun:
 @dataclass(frozen=True)
 class RunOutcome:
     """What actually happened: the raw process result plus the artifacts as the
-    process left them. ``events`` are the parsed stream events for backends with
-    an event channel (empty otherwise)."""
+    process left them.
+
+    ``events`` is the backend's raw event payload (e.g. a JSONL stream), kept
+    OPAQUE deliberately: real adapters parse it tolerantly with their own
+    normalize layers, where a malformed line must degrade rather than raise
+    (0.3.0 finding from the Codex adapter — typed event dicts forced eager
+    parsing upstream of the tolerance boundary). A backend whose answer and
+    metadata all live in stdout (Claude) or in artifacts may leave both
+    ``events`` and ``artifact_texts`` empty — using neither channel is a valid
+    shape, not a gap."""
 
     run: CommandRun
-    events: tuple[dict[str, Any], ...] = ()
-    artifact_texts: dict[str, str] = field(default_factory=dict)  # path -> contents read back
+    events: str = ""
+    artifact_texts: dict[str, str] = field(default_factory=dict)  # name -> contents read back
 
 
 @dataclass(frozen=True)

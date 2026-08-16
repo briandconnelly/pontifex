@@ -39,6 +39,18 @@ from pontifex.backend.protocol import (
 from pontifex.testing import conformance
 from test_contract import make_contract
 
+
+def _jsonl(events: str) -> list[dict]:
+    """Tolerant JSONL parse, as real normalize layers do: bad lines degrade."""
+    out = []
+    for line in events.splitlines():
+        with contextlib.suppress(json.JSONDecodeError):
+            parsed = json.loads(line)
+            if isinstance(parsed, dict):
+                out.append(parsed)
+    return out
+
+
 # ------------------------------------------------------------------ CodexLike
 
 
@@ -50,6 +62,7 @@ CODEX_CONTRACT = make_contract(
     isolation_policy=IsolationPolicy.SANDBOX_FLAG,
     needs_orphan_sweep=False,
     effort_silently_ignored_upstream=False,
+    effort_validation="shape_only",
     supported_features=frozenset({"delegate", "transfer", "usage_accounting"}),
     usage_event_markers=("token_count",),
     model_catalog=ModelCatalog(
@@ -93,7 +106,7 @@ class CodexLikeBackend:
             with contextlib.suppress(json.JSONDecodeError):
                 structured = json.loads(answer)
         usage = None
-        for event in outcome.events:
+        for event in _jsonl(outcome.events):
             if event.get("type") == "token_count":
                 usage = Usage(total_tokens=event.get("total"))
         return ExecResult(answer=answer, structured=structured, usage=usage)
@@ -121,6 +134,7 @@ KIMI_CONTRACT = make_contract(
     isolation_policy=IsolationPolicy.WORKTREE_ALL_TIERS,
     needs_orphan_sweep=True,
     effort_silently_ignored_upstream=True,
+    effort_validation="token_floor_plus_catalog",
     supported_features=frozenset({"delegate", "model_validation", "empty_response_detection"}),
     limits=Limits(
         max_argv_prompt_chars=8_000,
@@ -176,7 +190,7 @@ class KimiLikeBackend:
 
     def finalize(self, outcome: RunOutcome, request: RunRequest) -> ExecResult:
         answer = ""
-        for event in outcome.events:
+        for event in _jsonl(outcome.events):
             if event.get("role") == "assistant":
                 answer = event.get("content", "")
         structured = None
@@ -188,7 +202,7 @@ class KimiLikeBackend:
 
     def classify_failure(self, outcome: RunOutcome, request: RunRequest) -> ClassifiedFailure:
         if outcome.run.exit_code == 0 and not any(
-            e.get("role") == "assistant" for e in outcome.events
+            e.get("role") == "assistant" for e in _jsonl(outcome.events)
         ):
             return ClassifiedFailure(code="empty_response", detail="no assistant event")
         return classify.classify(KIMI_CONTRACT, outcome, request, detail="sanitized")
@@ -321,7 +335,7 @@ async def test_codexlike_lifecycle():
 
     outcome = RunOutcome(
         run=make_run(exit_code=0),
-        events=({"type": "token_count", "total": 42},),
+        events='{"type": "token_count", "total": 42}\nnot json — must degrade\n',
         artifact_texts={"last-message": '{"summary": "fine"}'},
     )
     result = backend.finalize(outcome, request)
@@ -345,7 +359,7 @@ async def test_kimilike_lifecycle():
 
     outcome = RunOutcome(
         run=make_run(exit_code=0),
-        events=({"role": "assistant", "content": "the answer"},),
+        events='{"role": "assistant", "content": "the answer"}\n',
     )
     result = backend.finalize(outcome, request)
     assert result.answer == "the answer"
@@ -355,7 +369,7 @@ async def test_kimilike_lifecycle():
 def test_kimilike_empty_response_detection():
     backend = KimiLikeBackend()
     request = RunRequest(kind="consult", prompt="q", cwd=".", timeout_seconds=10)
-    outcome = RunOutcome(run=make_run(exit_code=0), events=())
+    outcome = RunOutcome(run=make_run(exit_code=0), events="")
     assert backend.classify_failure(outcome, request).code == "empty_response"
 
 
