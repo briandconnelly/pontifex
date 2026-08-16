@@ -67,6 +67,13 @@ class PreparedRun:
     stdin_text: str | None = None
     orphan_marker: str | None = None  # passed to runtime.run_async when the contract needs it
     artifacts: tuple[str, ...] = ()  # staged temp paths (handshake, agent file, schema, output)
+    # Help-gated flags the preparation DROPPED because the installed CLI does not
+    # advertise them. A freeze-window finding from the Codex adapter: production
+    # surfaces these as compat warnings and uses them to reconcile reported
+    # provenance (a dropped --model means the run used the CLI's default, not the
+    # requested slug), so a prepare() that silently discards them cannot carry the
+    # real orchestration path. Empty for backends that gate nothing.
+    dropped_flags: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

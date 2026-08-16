@@ -7,6 +7,13 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### 0.4.0 (redaction strengthening — key-block handling flows into core)
 
+- `PreparedRun.dropped_flags` (defaulted, non-breaking): the channel for
+  help-gated flags the preparation dropped because the installed CLI does not
+  advertise them. Freeze-window finding from re-plumbing the Codex bridge's
+  orchestration through its adapter: production surfaces dropped flags as
+  compat warnings and reconciles reported model provenance from them, so a
+  `prepare()` that discarded them could not carry the real hot path.
+
 - `core.redaction` now redacts multi-line private-key blocks (PEM/PKCS8/OpenSSH/
   PGP) STATEFULLY — ported from the claude-in-codex bridge's local redactor,
   closing the pre-unification gap recorded under 0.3.0. The BEGIN/END markers
