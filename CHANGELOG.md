@@ -23,6 +23,13 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   for the prompt-append schema-instruction text (currently duplicated in the
   Kimi bridge under a byte-parity test), and classification's ambient
   extra-args context.
+- Known gap, discovered during the claude-in-codex context comparison:
+  `core.redaction` has NO multi-line PEM/OpenSSH/PGP key-block handling — a
+  private key pasted into a tracked file's diff (or returned in prose) is
+  scrubbed only if the inline value patterns happen to match. claude-in-codex's
+  local redactor handles these blocks statefully (failing closed on an
+  unterminated block); that handling must flow into `core.redaction` BEFORE any
+  bridge unifies onto the shared engine, or unification would weaken redaction.
 
 ### 0.2.0 (milestone M1 — conventions + provisional protocol)
 
