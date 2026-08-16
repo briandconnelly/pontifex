@@ -23,6 +23,11 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   for the prompt-append schema-instruction text (currently duplicated in the
   Kimi bridge under a byte-parity test), and classification's ambient
   extra-args context.
+- `JobStore.start` (and `start_idempotent` via passthrough) accepts
+  `stdin_text`: streamed to the worker over a pipe by a daemon thread, never
+  persisted — the transport for bridges whose prompts must stay off disk and
+  off argv (the claude bridge's design). Default `None` keeps the prior
+  DEVNULL behavior byte-identical.
 - Known gap, discovered during the claude-in-codex context comparison:
   `core.redaction` has NO multi-line PEM/OpenSSH/PGP key-block handling — a
   private key pasted into a tracked file's diff (or returned in prose) is

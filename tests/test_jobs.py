@@ -1408,3 +1408,39 @@ def test_result_ok_stamped_when_worker_completes_during_cancel_grace(tmp_path, m
     st = store.cancel(cwd, job_id)
     assert st["status"] == "done"  # completed result preserved, not masked as cancelled
     assert st["result_ok"] is False
+
+
+def test_start_streams_stdin_text_without_persisting_it(tmp_path: Path):
+    """stdin_text reaches the worker over a pipe and never lands in the record —
+    the transport for bridges whose prompts must stay off disk and off argv."""
+    store = jobs.JobStore(root=tmp_path / "jobs", ttl_seconds=3600, max_seconds=60, max_count=10)
+    cwd = str(tmp_path)
+    secret = "the-secret-prompt-text"
+    marker = tmp_path / "echoed.txt"
+    code = f"import sys, pathlib; pathlib.Path({str(marker)!r}).write_text(sys.stdin.read())"
+
+    job_id, _ = store.start(
+        lambda jd: [sys.executable, "-c", code], cwd, kind="consult", stdin_text=secret
+    )
+    deadline = time.time() + 10
+    while time.time() < deadline and not marker.exists():
+        time.sleep(0.05)
+    assert marker.read_text() == secret
+
+    # Nothing under the record carries the prompt.
+    jd = store._job_dir(cwd, job_id)
+    for f in jd.rglob("*"):
+        if f.is_file():
+            assert secret not in f.read_text(errors="replace"), f
+
+
+def test_start_without_stdin_text_gives_worker_devnull(tmp_path: Path):
+    store = jobs.JobStore(root=tmp_path / "jobs", ttl_seconds=3600, max_seconds=60, max_count=10)
+    cwd = str(tmp_path)
+    marker = tmp_path / "read.txt"
+    code = f"import sys, pathlib; pathlib.Path({str(marker)!r}).write_text(repr(sys.stdin.read()))"
+    store.start(lambda jd: [sys.executable, "-c", code], cwd, kind="consult")
+    deadline = time.time() + 10
+    while time.time() < deadline and not marker.exists():
+        time.sleep(0.05)
+    assert marker.read_text() == "''"  # DEVNULL: immediate EOF, no hang

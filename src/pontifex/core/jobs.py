@@ -295,6 +295,16 @@ def _terminate_pid_tree(
         _kill_pid_tree(pid)
 
 
+def _write_stdin(proc: subprocess.Popen, stdin_text: str) -> None:
+    """Feed the worker's stdin from a daemon thread; a dead worker is not an error."""
+    try:
+        assert proc.stdin is not None
+        proc.stdin.write(stdin_text)
+        proc.stdin.close()
+    except (BrokenPipeError, OSError):
+        pass
+
+
 @dataclass
 class JobStore:
     """Disk-backed job lifecycle rooted at ``root``.
@@ -531,6 +541,7 @@ class JobStore:
         kind: str,
         extra: dict | None = None,
         write_spec: dict | None = None,
+        stdin_text: str | None = None,
     ) -> tuple[str, str]:
         """Spawn ``cmd_factory(job_dir)`` detached and persist its record.
 
@@ -538,6 +549,12 @@ class JobStore:
         in the record). If ``write_spec`` is given, it is written to
         ``<job_dir>/spec.json`` before the command starts. Returns
         ``(job_id, started_at_iso)``.
+
+        ``stdin_text``, when given, is streamed to the worker over a pipe by a
+        daemon thread instead of being persisted anywhere — the transport for a
+        bridge whose prompts must stay off disk and off argv (the claude bridge's
+        design). With ``None`` (the default) the worker gets ``DEVNULL``,
+        byte-identical to the prior behavior.
         """
         with _LOCK:
             job_id = uuid4().hex
@@ -556,11 +573,17 @@ class JobStore:
                     proc = subprocess.Popen(
                         cmd,
                         cwd=str(jd),
-                        stdin=subprocess.DEVNULL,
+                        stdin=subprocess.DEVNULL if stdin_text is None else subprocess.PIPE,
                         stdout=ef,
                         stderr=ef,
                         start_new_session=True,
+                        text=stdin_text is not None,
+                        encoding="utf-8" if stdin_text is not None else None,
                     )
+                if stdin_text is not None:
+                    threading.Thread(
+                        target=_write_stdin, args=(proc, stdin_text), daemon=True
+                    ).start()
             except OSError:
                 shutil.rmtree(jd, ignore_errors=True)
                 raise
