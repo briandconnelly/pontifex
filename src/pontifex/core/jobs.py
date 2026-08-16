@@ -922,6 +922,7 @@ class JobStore:
         arg_hash: str,
         extra: dict | None = None,
         write_spec: dict | None = None,
+        stdin_text: str | None = None,
         lock_timeout: float | None = None,
     ) -> dict:
         """Deduplicated :meth:`start`. Reserves ``(tool, key)`` in the workspace index;
@@ -991,6 +992,7 @@ class JobStore:
                             cmd_factory,
                             cwd,
                             kind=kind,
+                            stdin_text=stdin_text,
                             # Caller extra is opaque record metadata, same as start()'s;
                             # the digest is protocol data the store owns, so it wins any
                             # key collision.
