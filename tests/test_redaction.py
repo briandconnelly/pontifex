@@ -410,7 +410,6 @@ _QUADRATIC_SEEDS: dict[str, tuple[str, int]] = {
         3500,
     ),
     redaction.LABELLED_VALUE_PATTERN.pattern: ("key=", 20000),
-    r"-----BEGIN [A-Z ]*PRIVATE KEY-----": ("-----BEGIN ", 7300),
     r"eyJ[A-Za-z0-9_-]{8,512}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}": ("eyJ", 90000),
     r"sk-proj-[A-Za-z0-9_-]{20,}": ("sk-proj-", 10000),
     r"sk-[A-Za-z0-9]{20,}": ("sk-", 26666),
@@ -1176,16 +1175,12 @@ _IN_AUTHORITY_PAYLOADS = [
 # both are claims about the matcher's whole language and deserve a deliberate re-check.
 _WHITESPACE_ONLY_SOURCES = frozenset(
     {
-        # Assembled rather than written out: the literal is the `detect-private-key`
-        # pre-commit hook's trigger substring, and spelling it whole fails the hook.
-        "-----BEGIN " + r"[A-Z ]*PRIVATE KEY-----",
         r"(?i)(Authorization:\s*Bearer\s+)[A-Za-z0-9._~+/=-]{16,}",
     }
 )
 
 # One string each exempt matcher accepts, used to prove the classification below.
 _WHITESPACE_REQUIRING_PROBES = [
-    "-----BEGIN " + "PRIVATE KEY-----",
     "Authorization: Bearer abcdef0123456789abcd",
 ]
 
@@ -2412,8 +2407,9 @@ def test_non_source_file_gets_no_code_exemption(diff: str):
 
 
 def test_vendor_shape_still_redacted_inside_exempt_context():
-    # The exemption only suppresses the labelled pattern; every vendor/JWT/PEM shape
-    # still runs, so a recognized secret in code-expression context is caught anyway.
+    # The exemption only suppresses the labelled pattern; every vendor/JWT shape still
+    # runs (and the stateful key-block pass is never exempted at all), so a recognized
+    # secret in code-expression context is caught anyway.
     diff = "diff --git a/app.py b/app.py\n+    token = sk-abcdefghijklmnopqrstuv(x)"
     out, paths = redaction.redact(diff)
     assert "sk-abcdefghijklmnopqrstuv" not in out
@@ -2915,3 +2911,172 @@ def test_a_redacted_diff_still_applies(tmp_path):
     patch.write_text(redacted)
     git("apply", str(patch))
     assert "def mul" in (tmp_path / "calc.py").read_text()
+
+
+# --- multi-line private-key blocks (ported from the claude-in-codex bridge) --
+
+
+def _key_markers(kind: str) -> tuple[str, str]:
+    # Assembled rather than written out: spelling a full marker in source would trip
+    # detect-private-key-style pre-commit hooks in downstream consumer repos.
+    return "-----BEGIN " + kind + "-----", "-----END " + kind + "-----"
+
+
+# Base64-shaped but matches NO inline pattern — proven by the negative control below,
+# so the block tests cannot pass vacuously off some other matcher.
+_KEY_BODY = "MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcw"
+
+
+def test_negative_control_inline_patterns_alone_miss_a_key_body_line():
+    """The instrument check: the stateful pass, not some inline pattern, is what the
+    block tests below exercise. If a future pattern starts matching this body shape,
+    the block tests would stop proving anything — this fails first and says why."""
+    _, count = redaction._redact_secret_values(_KEY_BODY)
+    assert count == 0
+
+
+@pytest.mark.parametrize(
+    "kind",
+    ["PRIVATE KEY", "RSA PRIVATE KEY", "OPENSSH PRIVATE KEY", "PGP PRIVATE KEY BLOCK"],
+)
+def test_private_key_block_body_is_redacted_in_diff(kind: str):
+    begin, end = _key_markers(kind)
+    diff = (
+        "diff --git a/app.py b/app.py\n"
+        f"+{begin}\n"
+        f"+{_KEY_BODY}\n"
+        f"+{_KEY_BODY}\n"
+        f"+{end}\n"
+        "+normal_line = 1\n"
+    )
+    out, paths = redaction.redact(diff)
+    assert _KEY_BODY not in out
+    # Markers stay visible (they are not secret; a reviewer sees what was dropped),
+    # and every body line keeps its diff prefix so the patch shape survives 1:1.
+    assert f"+{begin}\n" in out
+    assert f"+{end}\n" in out
+    assert "+[redacted: secret value]\n" in out
+    assert "+normal_line = 1" in out
+    assert paths == ["app.py"]
+
+
+def test_unterminated_key_block_fails_closed_in_diff():
+    begin, _ = _key_markers("RSA PRIVATE KEY")
+    diff = f"diff --git a/app.py b/app.py\n+{begin}\n+{_KEY_BODY}\n+{_KEY_BODY}"
+    out, paths = redaction.redact(diff)
+    assert _KEY_BODY not in out
+    assert paths == ["app.py"]
+
+
+def test_key_block_does_not_bleed_across_file_headers():
+    begin, _ = _key_markers("RSA PRIVATE KEY")
+    diff = (
+        "diff --git a/a.py b/a.py\n"
+        f"+{begin}\n"
+        f"+{_KEY_BODY}\n"
+        "diff --git a/b.py b/b.py\n"
+        "+harmless = 1\n"
+    )
+    out, paths = redaction.redact(diff)
+    assert _KEY_BODY not in out
+    assert "+harmless = 1" in out
+    assert paths == ["a.py"]
+
+
+def test_hunk_boundary_ends_an_open_key_block():
+    # A real key body is contiguous within one hunk; metadata ends the block so a
+    # missing END marker cannot swallow the rest of the file.
+    begin, _ = _key_markers("RSA PRIVATE KEY")
+    diff = (
+        "diff --git a/app.py b/app.py\n"
+        f"+{begin}\n"
+        f"+{_KEY_BODY}\n"
+        "@@ -1,2 +3,4 @@\n"
+        "+after_boundary = 1\n"
+    )
+    out, _ = redaction.redact(diff)
+    assert _KEY_BODY not in out
+    assert "+after_boundary = 1" in out
+
+
+def test_escaped_single_line_key_is_redacted_between_visible_markers():
+    begin, end = _key_markers("PRIVATE KEY")
+    diff = f'diff --git a/app.py b/app.py\n+cfg = "{begin}\\n{_KEY_BODY}\\n{end}\\n"\n'
+    out, paths = redaction.redact(diff)
+    assert _KEY_BODY not in out
+    assert begin in out
+    assert end in out
+    assert paths == ["app.py"]
+
+
+def test_token_sharing_the_end_marker_line_is_still_caught():
+    # The inline patterns run over the key pass's output, so a secret trailing the
+    # END marker on the same physical line does not ride out behind it.
+    begin, end = _key_markers("RSA PRIVATE KEY")
+    token = "ghp_" + "a1B2" * 6
+    diff = f"diff --git a/app.py b/app.py\n+{begin}\n+{_KEY_BODY}\n+{end} leaked {token}\n"
+    out, _ = redaction.redact(diff)
+    assert token not in out
+    assert _KEY_BODY not in out
+
+
+def test_key_block_mask_accounting_counts_emitted_markers():
+    begin, end = _key_markers("RSA PRIVATE KEY")
+    r = redaction.DiffRedactor()
+    for line in [
+        "diff --git a/app.py b/app.py",
+        f"+{begin}",
+        f"+{_KEY_BODY}",
+        f"+{_KEY_BODY}",
+        f"+{end}",
+    ]:
+        r.feed(line)
+    # One marker per body line; the bare BEGIN/END marker lines emit none, so
+    # inline_masks keeps its invariant (count of emitted markers) exactly.
+    assert r.inline_masks == 2
+    assert r.masked_paths == ["app.py"]
+    assert r.withheld_paths == []
+    assert r.redacted == ["app.py"]
+
+
+def test_key_block_inside_withheld_file_stays_withheld():
+    begin, _ = _key_markers("RSA PRIVATE KEY")
+    diff = f"diff --git a/id_rsa b/id_rsa\n+{begin}\n+{_KEY_BODY}\n"
+    r = redaction.DiffRedactor()
+    for line in diff.splitlines():
+        r.feed(line)
+    assert r.withheld_paths == ["id_rsa"]
+    assert r.masked_paths == []
+    assert r.inline_masks == 0
+
+
+def test_redact_text_redacts_multi_line_key_block_in_prose():
+    begin, end = _key_markers("RSA PRIVATE KEY")
+    text = f"here is the key:\n{begin}\n{_KEY_BODY}\n{_KEY_BODY}\n{end}\nafter = 1"
+    out = redaction.redact_text(text)
+    assert _KEY_BODY not in out
+    assert begin in out
+    assert end in out
+    assert "after = 1" in out
+
+
+def test_redact_text_unterminated_key_block_fails_closed():
+    begin, _ = _key_markers("OPENSSH PRIVATE KEY")
+    out = redaction.redact_text(f"{begin}\n{_KEY_BODY}\n{_KEY_BODY}")
+    assert _KEY_BODY not in out
+    assert begin in out
+
+
+def test_redact_text_token_sharing_the_end_marker_line_is_caught():
+    begin, end = _key_markers("RSA PRIVATE KEY")
+    token = "ghp_" + "a1B2" * 6
+    out = redaction.redact_text(f"{begin}\n{_KEY_BODY}\n{end} leaked {token}")
+    assert token not in out
+    assert _KEY_BODY not in out
+
+
+def test_redact_text_without_key_material_round_trips_byte_identical():
+    # The paired known-positive for this fast path is every test above: the same
+    # function DOES rewrite the text once a BEGIN marker is present.
+    text = "no keys here\r\nwindows line endings survive\n\ntrailing gap\n"
+    assert redaction.redact_text(text) == text

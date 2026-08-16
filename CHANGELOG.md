@@ -5,6 +5,27 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### 0.4.0 (redaction strengthening — key-block handling flows into core)
+
+- `core.redaction` now redacts multi-line private-key blocks (PEM/PKCS8/OpenSSH/
+  PGP) STATEFULLY — ported from the claude-in-codex bridge's local redactor,
+  closing the pre-unification gap recorded under 0.3.0. The BEGIN/END markers
+  stay visible so a reviewer sees what was dropped; every body line between them
+  is replaced 1:1 with `[redacted: secret value]` (hunk line counts survive, so
+  a redacted patch still applies); an UNTERMINATED block fails closed, redacted
+  to end of input; a block never bleeds across `diff --git` headers or
+  hunk/metadata boundaries; and the inline patterns scan the key pass's output,
+  so a token sharing the END marker's physical line is still caught. Applies to
+  `redact`/`DiffRedactor` (key masks flow through the same staged
+  `masked_paths`/`inline_masks` accounting, including withhold dominance) and to
+  `redact_text`/`redact_tree`/`exc_summary`.
+- REMOVED the `-----BEGIN [A-Z ]*PRIVATE KEY-----` entry from
+  `SECRET_VALUE_PATTERNS`. It masked the BEGIN marker itself while shipping the
+  entire base64 body — a disclosure marker claiming coverage it did not have —
+  and its missing trailing alternation never matched PGP's "PRIVATE KEY BLOCK"
+  suffix at all. The stateful pass owns key material now; output for
+  key-bearing input changes accordingly (markers visible, body dropped).
+
 ### 0.3.0 (protocol feedback from the three real adapters — still PROVISIONAL)
 
 - `RunOutcome.events` is now an OPAQUE raw payload string instead of parsed

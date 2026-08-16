@@ -452,7 +452,15 @@ SECRET_VALUE_PATTERNS = [
     re.compile(r"xox[baprs]-[A-Za-z0-9-]{20,}"),
     AUTHORIZATION_BEARER_PATTERN,
     LABELLED_VALUE_PATTERN,
-    re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
+    # NO private-key marker pattern here anymore. The old
+    # `-----BEGIN [A-Z ]*PRIVATE KEY-----` entry masked the BEGIN marker itself and then
+    # shipped the entire base64 body — a disclosure marker claiming coverage it did not
+    # have, on exactly the highest-value secret this module sees. Key material is now
+    # handled STATEFULLY (`_redact_key_content` below, driven by `DiffRedactor` and
+    # `redact_text`): the BEGIN/END markers stay visible so a reviewer sees what was
+    # dropped, and the body between them — the actual secret — is replaced. Reinstating
+    # a marker-shaped entry here would double-mask the visible markers that machinery
+    # deliberately emits.
     # Unlabeled secrets caught by shape alone (#73), independent of an adjacent label.
     # JWT: three base64url segments after the `eyJ` ("{" base64) header marker.
     #
@@ -977,6 +985,75 @@ def _redact_secret_values(line: str, *, exempt_code: bool = False) -> tuple[str,
     return "".join(out), len(merged)
 
 
+# --------------------------------------------------------------------------- #
+# Multi-line private-key blocks (PEM/PKCS8/OpenSSH/PGP)
+# --------------------------------------------------------------------------- #
+# Ported from the claude-in-codex bridge's local redactor — the pre-unification
+# requirement recorded in this repo's CHANGELOG: a key block's base64 body spans many
+# lines, none of which any inline pattern above recognizes on its own, so line-local
+# matching ships the whole key. Handled STATEFULLY instead: the BEGIN marker opens a
+# block, every line until the END marker is replaced whole, and an UNTERMINATED block
+# fails closed (redacted to end of input). The BEGIN/END markers themselves stay
+# visible — they are not secret, and keeping them shows a reviewer exactly what was
+# dropped. Trailing `[A-Z0-9 ]*` covers "OPENSSH"/"RSA" prefixes and PGP's
+# "PRIVATE KEY BLOCK" suffix, which the old marker-only pattern (see
+# `SECRET_VALUE_PATTERNS`) never matched at all.
+_PRIVATE_KEY_BEGIN_RE = re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY[A-Z0-9 ]*-----")
+_PRIVATE_KEY_END_RE = re.compile(r"-----END [A-Z0-9 ]*PRIVATE KEY[A-Z0-9 ]*-----")
+
+
+def _redact_key_content(content: str, in_block: bool) -> tuple[str, int, bool]:
+    """Redact private-key material within one content line (no diff prefix).
+
+    Handles markers that share a physical line (e.g. an escaped one-liner
+    ``key="-----BEGIN...-----\\nMII...\\n-----END...-----"``) as well as true
+    multi-line blocks. Only the body between the markers is dropped, and the
+    open-block state never leaks past an inline END.
+
+    Returns ``(emitted, marker_count, in_block_after)``. ``marker_count`` is the
+    number of ``_SECRET_VALUE_MARKER`` insertions actually emitted — the currency of
+    ``DiffRedactor.inline_masks`` — so a bare BEGIN/END marker line with no body on
+    it counts 0 even though it transitions the block state; the body lines that
+    follow carry the masks (and the path disclosure) for any real key.
+    """
+    if in_block:
+        end = _PRIVATE_KEY_END_RE.search(content)
+        if end is None:
+            return _SECRET_VALUE_MARKER, 1, True  # still inside the block: drop the line
+        # Body may precede the END marker on this closing line; keep END onward.
+        head = content[: end.start()]
+        if head.strip():
+            return _SECRET_VALUE_MARKER + content[end.start() :], 1, False
+        return content, 0, False
+    begin = _PRIVATE_KEY_BEGIN_RE.search(content)
+    if begin is None:
+        return content, 0, False
+    end = _PRIVATE_KEY_END_RE.search(content, begin.end())
+    if end is not None:
+        # Whole key inline on one line: redact between the markers, stay closed.
+        return content[: begin.end()] + _SECRET_VALUE_MARKER + content[end.start() :], 1, False
+    # Block opens here; redact any body trailing the BEGIN marker on this line.
+    tail = content[begin.end() :]
+    if tail.strip():
+        return content[: begin.end()] + _SECRET_VALUE_MARKER, 1, True
+    return content, 0, True
+
+
+def _redact_key_blocks_in_text(text: str) -> str:
+    """Apply the stateful key-block pass to free text, line by line.
+
+    ``split("\\n")`` (not ``splitlines``) so ``\\n``-delimited prose round-trips
+    exactly. The caller guards with a whole-text BEGIN search, so text with no key
+    material never takes this path and passes through byte-identical.
+    """
+    lines = text.split("\n")
+    in_block = False
+    for i, line in enumerate(lines):
+        if in_block or _PRIVATE_KEY_BEGIN_RE.search(line):
+            lines[i], _, in_block = _redact_key_content(line, in_block)
+    return "\n".join(lines)
+
+
 def redact_text(text: str | None) -> str | None:
     """Best-effort inline secret-value redaction for free-text (no diff/file logic).
 
@@ -990,9 +1067,17 @@ def redact_text(text: str | None) -> str | None:
     ``_interval_is_partial`` for the authoritative decision between the two and what
     each marker does and does not claim. ``None`` and empty strings pass through
     unchanged. Defense-in-depth, NOT a guarantee (consistent with this module's
-    contract)."""
+    contract).
+
+    Multi-line private-key blocks are redacted STATEFULLY before the inline pass
+    (``_redact_key_content``): the markers stay visible, the body is dropped, and an
+    unterminated block fails closed — redacted to the end of the text. The key pass
+    runs first so the inline patterns scan the already-scrubbed text, the same
+    ordering ``DiffRedactor`` uses on diff body lines."""
     if not text:
         return text
+    if _PRIVATE_KEY_BEGIN_RE.search(text):
+        text = _redact_key_blocks_in_text(text)
     out, _ = _redact_secret_values(text)
     return out
 
@@ -1090,6 +1175,11 @@ class DiffRedactor:
         self._skipping = False
         self._current_path = ""
         self._source_file = False
+        # Whether the scan is inside a multi-line private-key block (see
+        # `_redact_key_content`). Reset on every `diff --git` header (a block never
+        # bleeds across files) and on any non-scan line (hunk/metadata boundaries end
+        # a block — a real key body is contiguous within one hunk).
+        self._in_key_block = False
         # A staged-but-not-yet-applied disclosure event from the most recent `feed()`
         # call: ("withhold", path, 0) or ("mask", path, count) — `count` is unused
         # (0) for a withhold, kept only so the tuple shape is uniform (simpler typing
@@ -1108,6 +1198,7 @@ class DiffRedactor:
             spec = line[len("diff --git ") :]
             self._current_path = _diff_path_from_header(line)
             self._source_file = _is_source_path(self._current_path)
+            self._in_key_block = False  # never let a key block bleed across files
             self._skipping = bool(
                 SECRET_PATH_RE.search(spec) or SECRET_PATH_RE.search(self._current_path)
             )
@@ -1138,7 +1229,24 @@ class DiffRedactor:
             # line of a recognized source file (#421). A bare `Authorization:` header is
             # not source, and neither is YAML/JSON/properties/Markdown content, so both
             # get the same conservative treatment as free-text prose.
-            emit, count = _redact_secret_values(line, exempt_code=body_line and self._source_file)
+            exempt = body_line and self._source_file
+            if self._in_key_block or _PRIVATE_KEY_BEGIN_RE.search(line):
+                # Stateful key-block pass first, on the CONTENT only — replacing the
+                # whole line would eat the +/-/space marker and corrupt the patch. The
+                # inline patterns then scan the emitted content (same ordering as
+                # `redact_text`), so e.g. a token trailing an END marker on the same
+                # physical line is still caught. Both passes' emitted markers count
+                # toward `inline_masks` — its invariant is emitted markers, whichever
+                # pass produced them.
+                prefix, content = (line[0], line[1:]) if body_line else ("", line)
+                content, key_count, self._in_key_block = _redact_key_content(
+                    content, self._in_key_block
+                )
+                emit, value_count = _redact_secret_values(content, exempt_code=exempt)
+                emit = prefix + emit
+                count = key_count + value_count
+            else:
+                emit, count = _redact_secret_values(line, exempt_code=exempt)
             # `self._current_path` gates the whole block — a headerless stream (this
             # class starts closed) must not silently count an untracked inline mask
             # against an empty masked_paths (#433 review F3). Checking
@@ -1157,6 +1265,7 @@ class DiffRedactor:
                 if track:
                     self.commit_pending()
             return [emit]
+        self._in_key_block = False  # hunk/metadata boundary ends any open block
         return [line]
 
     def commit_pending(self) -> None:
