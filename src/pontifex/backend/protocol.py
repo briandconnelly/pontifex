@@ -1,7 +1,7 @@
 """AgentBackend: the staged run lifecycle every backend adapter implements.
 
-**PROVISIONAL** until ``CONTRACT_API_VERSION`` reaches 1 (see package
-docstring).
+**FROZEN** at ``CONTRACT_API_VERSION = 1`` (see the package docstring for the
+freeze discipline).
 
 The protocol is one staged lifecycle — prepare → (caller runs the process) →
 finalize / classify — rather than per-flag argument methods, because the real
@@ -146,7 +146,7 @@ class ClassifiedFailure:
 @runtime_checkable
 class AgentBackend(Protocol):
     """The behavior half of a backend adapter (static facts live on the
-    BackendContract). PROVISIONAL — see module docstring."""
+    BackendContract). Frozen at contract API 1 — see module docstring."""
 
     def validate_request(self, request: RunRequest) -> ClassifiedFailure | None:
         """Pre-spend local validation. MUST reject what the upstream CLI would

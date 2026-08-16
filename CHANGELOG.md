@@ -5,6 +5,27 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### 0.5.0 (THE PROTOCOL FREEZE — `contract_api_version = 1`)
+
+- `pontifex.backend` is FROZEN. The plan's freeze criterion — all three real
+  adapters compile, type-check, and pass conformance and differential fixtures
+  — was met and then exceeded: each bridge's production orchestration now
+  stages every model-bearing run through its adapter's `prepare()`
+  (codex-in-claude's `run_codex_exec`, moonbridge's `run_kimi_exec`, and
+  claude-in-codex's sync tools + async job launch), so the adapters cannot
+  drift from production behavior — they are production behavior.
+- Freeze discipline, now binding: required Protocol members and required
+  `BackendContract` fields are stable within a minor line; "additive" changes
+  to a Protocol or frozen dataclass are breaking, so new behavior lands as
+  defaulted fields or optional capability protocols (the pattern
+  `effort_validation`, `dropped_flags`, and `artifact_paths` already
+  followed).
+- Deferred-findings ledger closed: the 0.3.0 note's schema-instruction seam
+  resolved consumer-side (the Kimi re-plumb dissolved the duplication — one
+  source, in the bridge that owns the strategy); classification's ambient
+  extra-args context is recorded on the Codex adapter as acceptable while
+  extra args are operator-owned process state.
+
 ### 0.4.0 (redaction strengthening — key-block handling flows into core)
 
 - `PreparedRun.artifact_paths` (defaulted, non-breaking): NAMED staged paths,
