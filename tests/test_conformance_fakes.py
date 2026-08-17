@@ -12,9 +12,9 @@ the protocol was shaped around:
   env scrubbing, envelope-aware failure classification via the backend hook.
 
 These are smoke checks: they prove the protocol CAN express all three shapes.
-They are not the compatibility authority — ``pontonier.backend`` is FROZEN at
-``CONTRACT_API_VERSION = 1``, and its module docstring states what that permits.
-Read it before changing anything these fakes implement.
+They are not the compatibility authority — the ``pontonier.backend`` module
+docstring is, including which changes its freeze treats as breaking. Read it
+before changing anything these fakes implement.
 """
 
 from __future__ import annotations
