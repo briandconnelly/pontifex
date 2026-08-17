@@ -29,8 +29,8 @@ bridges' `_core` packages:
 | `workspace` | MCP-root workspace resolution |
 | `jsoncache` | Small JSON file cache |
 
-**Rule:** `pontonier.core` never imports from the rest of the package.
-CI enforces this with import-linter.
+**Rule:** `pontonier.core` never imports from the rest of the package. The gate
+enforces this with import-linter; `src/pontonier/core/__init__.py` says why.
 
 `pontonier.conventions` — the shared vocabulary bridges are built from:
 error taxonomy + repair rules (`envelope`), host-parameterized prompt
@@ -42,11 +42,9 @@ in each bridge.
 `pontonier.backend` — **FROZEN** (`CONTRACT_API_VERSION = 1`): the
 `BackendContract` static-facts dataclass, the `AgentBackend` staged run
 lifecycle (`validate_request` → `prepare` → `finalize`/`classify_failure`),
-and a shared failure classifier with fixed precedence. Required Protocol
-members and required `BackendContract` fields are stable within a minor
-line; because additive changes to a Protocol or a frozen dataclass are
-breaking, new behavior lands as optional capability protocols or
-defaulted fields.
+and a shared failure classifier with fixed precedence. What the freeze
+permits is stated once, in `src/pontonier/backend/__init__.py` — read it
+before changing anything in that package.
 
 `pontonier.testing` — importable, framework-agnostic test kit: surface
 honesty (forbidden-phrase scanning against the built wire), adapter and
@@ -55,11 +53,14 @@ violation lists; wire them into any harness.
 
 ## Development
 
-This project uses [uv](https://docs.astral.sh/uv/):
+This project uses [uv](https://docs.astral.sh/uv/). One command runs the whole
+gate — the same one CI runs:
 
 ```sh
 uv sync
-uv run pytest
-uv run ruff check
-uv run lint-imports
+uv run scripts/check.sh
 ```
+
+Setup, the individual gate steps, and the commit format are in
+[CONTRIBUTING.md](CONTRIBUTING.md). Norms and prohibitions for AI agents working in
+this repository are in [AGENTS.md](AGENTS.md). Releases: [docs/releasing.md](docs/releasing.md).

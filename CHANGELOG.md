@@ -3,6 +3,38 @@
 All notable changes to this project will be documented in this file. The format
 is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+This file is decision history, not current policy. Rules that still bind live in
+[AGENTS.md](AGENTS.md) and the documents it links.
+
+## [Unreleased]
+
+### Repository
+
+- The repository now carries an instruction layer: `AGENTS.md` (canonical norms,
+  with `CLAUDE.md` pointing at it), `CONTRIBUTING.md` (setup, the gate, commit
+  format), `docs/releasing.md`, and `docs/github-config.md` for the enforced
+  controls. Previously an agent had to infer all of it from CI YAML and git history.
+- `scripts/check.sh` is the one verification entry point. `.github/workflows/test.yml`
+  runs that exact script, so a green local run is a green CI run — the README used to
+  document four of the eight checks CI actually ran. Its wheel step builds into a
+  temporary directory instead of globbing a persistent `dist/`, which could not be
+  reproduced locally once `dist/` held more than one wheel.
+- `.github/workflows/ci.yml` gains a `gate` job: one stable required-check context
+  that aggregates the test matrix, so adding a Python version cannot silently narrow
+  branch protection.
+- The commit-message checker is wired up (`.pre-commit-config.yaml`, installed with
+  `prek install --hook-type commit-msg`). Its docstring pointed at a `prek.toml` and a
+  `CONTRIBUTING.md` that did not exist, and its allowed scopes were transplanted from
+  another repository; both now match this one.
+- Two comments that stated the opposite of current policy are corrected: the
+  `pyproject.toml` note promising a pydantic dependency that was deliberately never
+  added, and the `tests/test_conformance_fakes.py` docstring calling the backend
+  protocol PROVISIONAL with a freeze gate still ahead of it.
+- Read-only CI jobs no longer keep the checkout token while running repository code
+  (`persist-credentials: false`); only the tag-pushing job keeps it.
+- Added `CODEOWNERS`, issue and PR templates, `SECURITY.md`, and Dependabot for
+  Actions and uv.
+
 ## [0.5.0] — 2026-08-16
 
 ### Release engineering
