@@ -9,7 +9,7 @@ in linked documents, not inline.
 Run the full gate before you claim work is done. It is the same gate CI runs:
 
 ```sh
-uv run scripts/check.sh
+./scripts/check.sh
 ```
 
 Do not report success from a subset of it. Individual steps are listed in

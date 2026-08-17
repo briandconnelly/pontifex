@@ -14,6 +14,6 @@ labels: enhancement
 
 **Compatibility**
 
-<!-- `pontonier.backend` is FROZEN at CONTRACT_API_VERSION = 1: a new *required*
-Protocol member or BackendContract field is a breaking change. If the proposal needs
-one, say so here. -->
+<!-- If this touches `pontonier.backend`, check the compatibility rules in
+src/pontonier/backend/__init__.py and say here whether the proposal needs a change
+they treat as breaking. -->

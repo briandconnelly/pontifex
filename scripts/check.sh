@@ -3,7 +3,11 @@
 # so a green run here is a green run there. Documented in CONTRIBUTING.md#the-gate.
 #
 # Usage:
-#   uv run scripts/check.sh
+#   ./scripts/check.sh
+#
+# Run it directly, NOT as `uv run scripts/check.sh`: that outer `uv run` locks and
+# syncs the project before the script starts, which is exactly the unlocked mutation
+# the gate is supposed to reject.
 #
 # Environment:
 #   SKIP_WHEEL_CHECK=1   skip the packaging step while iterating locally. CI never
@@ -13,10 +17,15 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+# Every `uv run` below would otherwise re-lock and re-sync on its own, so the gate
+# could pass against an environment that does not match the committed uv.lock. With
+# this set, a lockfile that needs updating is an error instead of a silent rewrite.
+export UV_LOCKED=1
+
 step() { printf '\n\033[1m==> %s\033[0m\n' "$1"; }
 
 step "Locked install"
-uv sync --frozen
+uv sync --locked
 
 step "GitHub Actions are SHA-pinned"
 uv run python scripts/check_github_actions_pinning.py

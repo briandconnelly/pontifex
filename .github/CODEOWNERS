@@ -22,5 +22,5 @@
 /docs/releasing.md          @briandconnelly
 /docs/github-config.md      @briandconnelly
 
-# The frozen contract. Additive changes here are breaking changes.
+# Frozen contract; src/pontonier/backend/__init__.py states the compatibility rules.
 /src/pontonier/backend/     @briandconnelly

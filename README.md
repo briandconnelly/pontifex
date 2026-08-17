@@ -58,7 +58,7 @@ gate — the same one CI runs:
 
 ```sh
 uv sync
-uv run scripts/check.sh
+./scripts/check.sh
 ```
 
 Setup, the individual gate steps, and the commit format are in

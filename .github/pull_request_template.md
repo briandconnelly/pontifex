@@ -8,7 +8,7 @@
 
 ## Checklist
 
-- [ ] `uv run scripts/check.sh` passes locally
+- [ ] `./scripts/check.sh` passes locally
 - [ ] `CHANGELOG.md` updated under `## [Unreleased]`, if behavior changed
 - [ ] Docs describing the changed behavior updated in this PR
 - [ ] No new runtime dependency (or: it is justified in the changelog entry)

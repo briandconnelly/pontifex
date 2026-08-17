@@ -2,13 +2,7 @@
   "name": "protect release tags",
   "target": "tag",
   "enforcement": "active",
-  "bypass_actors": [
-    {
-      "actor_id": 15368,
-      "actor_type": "Integration",
-      "bypass_mode": "always"
-    }
-  ],
+  "bypass_actors": [],
   "conditions": {
     "ref_name": {
       "include": ["refs/tags/v*"],
@@ -16,7 +10,6 @@
     }
   },
   "rules": [
-    { "type": "creation" },
     { "type": "deletion" },
     { "type": "update" },
     { "type": "non_fast_forward" }

@@ -19,14 +19,17 @@ One command, run from the repository root. CI runs this exact script, so a green
 here is a green run there:
 
 ```sh
-uv run scripts/check.sh
+./scripts/check.sh
 ```
+
+Run it directly rather than as `uv run scripts/check.sh` — the outer `uv run` would
+lock and sync the project before the script starts, defeating its locked-install step.
 
 It runs, in order:
 
 | Step | Command |
 | --- | --- |
-| Locked install | `uv sync --frozen` |
+| Locked install | `uv sync --locked` |
 | Actions are SHA-pinned | `uv run python scripts/check_github_actions_pinning.py` |
 | Lint | `uv run ruff check .` |
 | Format | `uv run ruff format --check .` |
@@ -35,8 +38,9 @@ It runs, in order:
 | Tests + 95% coverage floor | `uv run pytest` |
 | Wheel builds and imports clean | `uv build --wheel` into a temp dir, then import it |
 
-To iterate on one step, run it directly from the table. To skip the slow packaging
-step while iterating, `SKIP_WHEEL_CHECK=1 uv run scripts/check.sh`. CI never skips it.
+The script exports `UV_LOCKED=1`, so any step that would rewrite `uv.lock` fails
+instead. To iterate on one step, run it directly from the table. To skip the slow
+packaging step, `SKIP_WHEEL_CHECK=1 ./scripts/check.sh`. CI never skips it.
 
 ## Commit messages
 

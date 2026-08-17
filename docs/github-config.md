@@ -9,6 +9,12 @@ Everything here needs **admin scope**. The local agent identity
 which is intentional: an identity that can edit the ruleset is not bound by it.
 Run these commands as the maintainer.
 
+> **Not yet applied.** Everything on this page is proposed configuration. The payloads
+> below were written against the REST API docs but have not been accepted by a live
+> `POST`, because the token available to the agent cannot create rulesets. Apply them
+> one at a time and read the response — a `422` means the payload needs adjusting, not
+> that the control is unavailable.
+
 ## Status
 
 | Control | State as of 2026-08-16 |
@@ -26,6 +32,26 @@ Re-check the first two at any time with:
 gh api repos/briandconnelly/pontonier/rulesets --jq '.[] | {name, target, enforcement}'
 ```
 
+## The solo-maintainer constraint
+
+This is a single-maintainer repository, and that shapes every choice below. GitHub
+does not let an author approve their own pull request, so any rule that *requires* an
+approving review — including required code-owner review — locks the only human out of
+merging their own work. The ruleset therefore requires a pull request and a green
+`gate`, but **zero approvals**.
+
+What that does and does not buy:
+
+- Enforced: no direct push to `main`, no force-push, no deletion, and no merge until
+  `gate` passes.
+- Not enforced: that a human, rather than the agent, presses Merge. That one stays
+  advisory — [AGENTS.md](../AGENTS.md#off-limits-without-explicit-human-instruction)
+  forbids it, and CODEOWNERS auto-requests your review on every PR so you see it.
+
+When a second maintainer or reviewer exists, raise
+`required_approving_review_count` to 1 and set `require_code_owner_review: true`.
+Until then, do not — it would be a lockout, not a control.
+
 ## 1. Protect `main`
 
 Requires the `gate` check from `.github/workflows/ci.yml` — one stable context that
@@ -37,38 +63,30 @@ gh api repos/briandconnelly/pontonier/rulesets \
   --method POST --input docs/rulesets/main.json
 ```
 
-`bypass_actors` is empty in that file. On a solo repository that means *you* also
-cannot push straight to `main` — you merge your own PRs instead, which is the
-intended trade. If you want a personal escape hatch, add yourself in
-Settings → Rules → the ruleset → Bypass list. Never add an automation identity: the
-agent's whole constraint is this rule.
+`bypass_actors` is empty. Never add an automation identity: the agent's whole
+constraint is this rule. If you later want a personal escape hatch for direct pushes,
+add yourself through Settings → Rules → the ruleset → Bypass list, which only offers
+actors GitHub considers eligible.
 
 ## 2. Protect `v*` tags
 
-The publish workflow triggers on a pushed `v*.*.*` tag, so tag creation is a publish
-trigger and belongs behind the same kind of gate as `main`.
+The publish workflow triggers on a pushed `v*.*.*` tag, so a tag is a publish trigger.
+This ruleset makes existing release tags immutable — they cannot be moved, deleted, or
+force-updated, so a published version can never come to point at different code.
 
 ```sh
 gh api repos/briandconnelly/pontonier/rulesets \
   --method POST --input docs/rulesets/tags.json
 ```
 
-The ruleset restricts **creation** as well as update and deletion — a tag nobody can
-create is a publish nobody can trigger. That leaves one deliberate hole: the release
-workflow's `create-tag` job pushes the tag itself, and it runs *before* the `pypi`
-environment approval. So the GitHub Actions app (`actor_id: 15368`, verified via
-`gh api apps/github-actions`) is the single bypass actor.
-
-That is a real trade-off, stated plainly: anyone who can dispatch the Publish
-workflow can still cause a tag. It is narrower than it looks — dispatching needs
-`actions: write`, which the agent App should not hold (see the audit item below) —
-and the environment approval still gates the upload itself. Verify with:
-
-```sh
-gh api repos/briandconnelly/pontonier/installation --jq '.permissions'   # as maintainer
-```
-
-If that shows `actions: write` for the agent installation, remove it.
+**Tag *creation* is deliberately not restricted here.** Restricting it would also stop
+the release workflow's `create-tag` job, which pushes the tag with `GITHUB_TOKEN`
+before the `pypi` approval gate — so the rule would need a bypass actor for GitHub
+Actions, and whether the built-in Actions app is an eligible bypass actor for a
+repository ruleset is unverified. If you want creation locked down too, the sound
+version is a dedicated release GitHub App as the bypass actor, or moving tag creation
+out of CI entirely. Until then, tag creation is gated by the environment approval in
+§3 and by the prohibition in AGENTS.md.
 
 ## 3. Pin the pypi environment to release refs
 
@@ -78,9 +96,14 @@ file is edited in a PR:
 
 ```sh
 gh api repos/briandconnelly/pontonier/environments/pypi \
-  --method PUT \
-  --raw-field 'deployment_branch_policy[protected_branches]=false' \
-  --raw-field 'deployment_branch_policy[custom_branch_policies]=true'
+  --method PUT --input - <<'JSON'
+{
+  "deployment_branch_policy": {
+    "protected_branches": false,
+    "custom_branch_policies": true
+  }
+}
+JSON
 
 gh api repos/briandconnelly/pontonier/environments/pypi/deployment-branch-policies \
   --method POST -f name='main' -f type='branch'
@@ -89,9 +112,13 @@ gh api repos/briandconnelly/pontonier/environments/pypi/deployment-branch-polici
   --method POST -f name='v*.*.*' -f type='tag'
 ```
 
-Also turn on **Prevent self-review** for the environment in
-Settings → Environments → pypi, so the approval is a real second pair of eyes when
-someone else is added as a reviewer later.
+The JSON body matters: those two fields are booleans, and `gh api -f/--raw-field`
+would send them as the strings `"false"` and `"true"`, which the API rejects.
+
+**Leave "Prevent self-review" off** while you are the only reviewer — it stops the
+person who dispatched the workflow from approving the deployment, which on a
+one-person repository means nothing can ever be published. Turn it on in the same
+change that adds a second eligible reviewer.
 
 ## 4. Housekeeping
 
@@ -99,9 +126,22 @@ someone else is added as a reviewer later.
 gh repo edit briandconnelly/pontonier --delete-branch-on-merge
 ```
 
+## 5. Audit the agent App's permissions
+
+The tag protection above leaves dispatching the Publish workflow as the remaining path
+to a release, so the agent App should not be able to dispatch workflows. Check what it
+actually holds, signed in as yourself:
+
+```sh
+gh api /user/installations --jq '.installations[] | {app_slug, permissions}'
+```
+
+`GET /repos/{owner}/{repo}/installation` does *not* work for this — that endpoint
+requires a GitHub App JWT, not a user token. If the agent installation shows
+`actions: write`, remove it; the agent has no need to trigger workflow runs.
+
 ## What is deliberately not configured
 
 - **Required signed commits.** Attribution already comes from the distinct bot App
   identity; signing is worth adding but is not load-bearing here.
-- **Required reviewers on the branch ruleset beyond CODEOWNERS.** A solo repository
-  with a required code-owner review already routes every agent PR to a human.
+- **Required approvals.** See the solo-maintainer constraint above.
