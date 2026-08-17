@@ -78,9 +78,10 @@ actors GitHub considers eligible.
 
 ## 2. Protect `v*` tags
 
-The publish workflow triggers on a pushed `v*.*.*` tag, so a tag is a publish trigger.
-This ruleset makes existing release tags immutable — they cannot be moved, deleted, or
-force-updated, so a published version can never come to point at different code.
+A pushed tag no longer triggers a publish (see §5), so this ruleset is about integrity
+rather than triggering: it makes existing release tags immutable. They cannot be moved,
+deleted, or force-updated, so a published version can never come to point at different
+code.
 
 ```sh
 gh api repos/briandconnelly/pontonier/rulesets \
@@ -91,10 +92,9 @@ gh api repos/briandconnelly/pontonier/rulesets \
 the release workflow's `create-tag` job, which pushes the tag with `GITHUB_TOKEN`
 before the `pypi` approval gate — so the rule would need a bypass actor for GitHub
 Actions, and whether the built-in Actions app is an eligible bypass actor for a
-repository ruleset is unverified. If you want creation locked down too, the sound
-version is a dedicated release GitHub App as the bypass actor, or moving tag creation
-out of CI entirely. Until then, tag creation is gated by the environment approval in
-§3 and by the prohibition in AGENTS.md.
+repository ruleset is unverified. It matters less than it did: since a tag push no
+longer triggers `publish.yml` (§5), a stray tag is now inert rather than a publish
+trigger.
 
 ## 3. Pin the pypi environment to release refs
 
@@ -136,8 +136,8 @@ gh repo edit briandconnelly/pontonier --delete-branch-on-merge
 
 ## 5. Audit the agent App's permissions
 
-The tag protection above leaves dispatching the Publish workflow as the remaining path
-to a release, so the agent App should not be able to dispatch workflows.
+Dispatching the Publish workflow is the only path to a release, so the agent App must
+not be able to dispatch workflows.
 
 **Read the grants in the UI:** <https://github.com/settings/installations> → the
 agent App → *Permissions*. This is the authoritative view and needs no token.
@@ -156,13 +156,15 @@ the agent can watch CI but cannot dispatch a workflow, which closes the
 rulesets that constrain it, and no `workflows` means it cannot edit CI — both verified
 by `403`s and a rejected push rather than assumed.
 
-**The residual risk, stated plainly:** `contents: write` is not separable from tag
-creation, and pushing a `v*.*.*` tag triggers `publish.yml`. The agent therefore still
-has one reachable path toward a release. It stops at the `pypi` environment approval,
-which is a human gate — so **an approval request you did not initiate is a signal to
-investigate, not to click**. Closing this properly means either dropping the tag-push
-trigger from `publish.yml` (leaving dispatch, which the agent cannot reach) or a
-dedicated release App as the tag ruleset's bypass actor.
+`contents: write` is not separable from tag creation, so the agent can still create a
+`v*.*.*` tag. `publish.yml` no longer triggers on a pushed tag, which makes that tag
+inert: releasing requires `workflow_dispatch`, and dispatching requires
+`actions: write`, which the agent does not have. **Do not add the tag-push trigger
+back without also restricting tag creation.**
+
+Two human gates remain behind that, unchanged: the `pypi` environment approval, and
+the branch policy limiting which refs can reach it. An approval request you did not
+initiate is a signal to investigate, not to click.
 
 Two API routes look like they would answer this and do not:
 

@@ -34,6 +34,13 @@ This file is decision history, not current policy. Rules that still bind live in
   (`persist-credentials: false`); only the tag-pushing job keeps it.
 - Added `CODEOWNERS`, issue and PR templates, `SECURITY.md`, and Dependabot for
   Actions and uv.
+- `publish.yml` no longer triggers on a pushed `v*.*.*` tag; `workflow_dispatch` is
+  the only entry point. The agent identity necessarily holds `contents: write` (it
+  cannot push a branch otherwise), which makes creating a tag reachable by an agent,
+  while dispatching needs `actions: write`, which it does not hold. Removing the
+  trigger also removed the conditional job guards that existed solely to reconcile the
+  two paths, so `create-tag` now always runs and the downstream jobs use plain
+  `needs:` success semantics.
 
 ## [0.5.0] — 2026-08-16
 

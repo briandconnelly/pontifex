@@ -52,8 +52,10 @@ After the release PR is merged to `main`:
 4. It publishes via PyPI trusted publishing (OIDC — no long-lived token exists) and
    opens a GitHub Release whose notes are the changelog section for that version.
 
-Pushing a `v*.*.*` tag directly also triggers the workflow, skipping the tag-creation
-job. Prefer the dispatch path: it checks that you are on `main` first.
+Dispatch is the **only** trigger — pushing a `v*.*.*` tag does nothing. That is
+deliberate: the agent identity can create tags (it holds `contents: write` so it can
+push branches at all) but cannot dispatch a workflow, so this keeps the one entry
+point in human hands. See [github-config.md](github-config.md#5-audit-the-agent-apps-permissions).
 
 ## If it goes wrong
 
