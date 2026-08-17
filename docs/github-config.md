@@ -25,6 +25,13 @@ Run these commands as the maintainer.
 | `pypi` deployment branch policy | **absent** — `deployment_branch_policy: null`, any ref can deploy |
 | Delete branch on merge | **off** |
 | Classic branch protection | unknown — the endpoint returns 403 to a non-admin token |
+| Agent App `workflows` permission | **not granted** — verified below |
+
+The last row is confirmed, not assumed: pushing a branch that edited
+`.github/workflows/ci.yml` as the agent identity was rejected by GitHub with
+*"refusing to allow a GitHub App to create or update workflow … without `workflows`
+permission"*. Keep it that way. It means changes to CI — the thing that decides what
+"green" means — always pass through the maintainer's own credentials.
 
 Re-check the first two at any time with:
 
