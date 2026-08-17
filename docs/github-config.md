@@ -9,35 +9,36 @@ Everything here needs **admin scope**. The local agent identity
 which is intentional: an identity that can edit the ruleset is not bound by it.
 Run these commands as the maintainer.
 
-> **Not yet applied.** Everything on this page is proposed configuration. The payloads
-> below were written against the REST API docs but have not been accepted by a live
-> `POST`, because the token available to the agent cannot create rulesets. Apply them
-> one at a time and read the response — a `422` means the payload needs adjusting, not
-> that the control is unavailable.
-
 ## Status
 
-| Control | State as of 2026-08-16 |
+Applied and verified on 2026-08-17. The payloads in `docs/rulesets/` are what was
+accepted; re-POST them to rebuild the configuration from scratch.
+
+| Control | State |
 | --- | --- |
-| Branch ruleset on `main` | **absent** — `gh api repos/briandconnelly/pontonier/rulesets` returns `[]` |
-| Tag ruleset on `v*` | **absent** — same |
-| `pypi` environment approval | present — requires review from `briandconnelly` |
-| `pypi` deployment branch policy | **absent** — `deployment_branch_policy: null`, any ref can deploy |
-| Delete branch on merge | **off** |
+| Branch ruleset on `main` | **active** — ruleset `protect main` |
+| Tag ruleset on `v*` | **active** — ruleset `protect release tags` |
+| `pypi` environment approval | **active** — requires review from `briandconnelly` |
+| `pypi` deployment branch policy | **active** — `main` (branch) and `v*.*.*` (tag) only |
+| Prevent self-review on `pypi` | **off**, deliberately — see §3 |
+| Delete branch on merge | **on** |
+| Auto-merge | **off**, deliberately — it would let a PR land with no human in the loop |
 | Classic branch protection | unknown — the endpoint returns 403 to a non-admin token |
 | Agent App `workflows` permission | **not granted** — verified below |
+
+Verify the rules actually in force on the default branch — not merely that a ruleset
+exists — with:
+
+```sh
+gh api repos/briandconnelly/pontonier/rules/branches/main --jq '[.[] | .type]'
+# ["deletion","non_fast_forward","pull_request","required_status_checks"]
+```
 
 The last row is confirmed, not assumed: pushing a branch that edited
 `.github/workflows/ci.yml` as the agent identity was rejected by GitHub with
 *"refusing to allow a GitHub App to create or update workflow … without `workflows`
 permission"*. Keep it that way. It means changes to CI — the thing that decides what
 "green" means — always pass through the maintainer's own credentials.
-
-Re-check the first two at any time with:
-
-```sh
-gh api repos/briandconnelly/pontonier/rulesets --jq '.[] | {name, target, enforcement}'
-```
 
 ## The solo-maintainer constraint
 
@@ -97,9 +98,9 @@ out of CI entirely. Until then, tag creation is gated by the environment approva
 
 ## 3. Pin the pypi environment to release refs
 
-Today the environment's human approval is the only thing between a workflow run and
-PyPI, and any ref can reach it. Restrict it so the guard holds even if the workflow
-file is edited in a PR:
+The environment's human approval is the last thing between a workflow run and PyPI.
+Without a branch policy any ref could reach it, so it is pinned to release refs — the
+guard then holds even if the workflow file is edited in a PR:
 
 ```sh
 gh api repos/briandconnelly/pontonier/environments/pypi \
