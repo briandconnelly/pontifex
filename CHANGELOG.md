@@ -22,6 +22,11 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   at 0.3.0.dev0 across two bumps). `tests/test_version.py` now pins the
   installed metadata to the `pyproject.toml` declaration, which also catches an
   editable install left stale by a bump without a re-sync.
+- Releases publish from CI. `.github/workflows/publish.yml` runs the full test
+  gate, builds with `--no-sources`, creates the tag before publishing so a PyPI
+  release can never exist without its git tag, uploads to PyPI through trusted
+  publishing (OIDC, no long-lived token), and opens a GitHub Release with the
+  changelog section as its notes. Adapted from the codex-in-claude workflow.
 
 ### Hardening
 
