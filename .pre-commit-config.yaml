@@ -1,0 +1,15 @@
+# Git hooks, run by prek (https://prek.j178.dev) or pre-commit.
+# Install the commit-msg hook once per clone:
+#
+#     prek install --hook-type commit-msg
+#
+# The gate itself is scripts/check.sh, not a hook — see CONTRIBUTING.md#the-gate.
+repos:
+  - repo: local
+    hooks:
+      - id: conventional-commit
+        name: Conventional Commit message
+        # Pure stdlib, so `language: system` python is enough — no environment to build.
+        entry: python3 scripts/check_commit_message.py
+        language: system
+        stages: [commit-msg]

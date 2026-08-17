@@ -1,4 +1,4 @@
-"""Three fake adapters — smoke validation of the PROVISIONAL protocol.
+"""Three fake adapters — smoke validation of the frozen protocol.
 
 Each fake models one real backend's mechanics, exercising the variation points
 the protocol was shaped around:
@@ -11,8 +11,10 @@ the protocol was shaped around:
 * ClaudeLike — stdin prompt, answer from a stdout JSON envelope, config-mode
   env scrubbing, envelope-aware failure classification via the backend hook.
 
-These are smoke checks: they prove the protocol CAN express all three shapes,
-not that the real adapters are done. The real freeze gate is milestones M2 through M4.
+These are smoke checks: they prove the protocol CAN express all three shapes.
+They are not the compatibility authority — the ``pontonier.backend`` module
+docstring is, including which changes its freeze treats as breaking. Read it
+before changing anything these fakes implement.
 """
 
 from __future__ import annotations

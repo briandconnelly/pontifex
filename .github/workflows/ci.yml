@@ -16,3 +16,21 @@ concurrency:
 jobs:
   test:
     uses: ./.github/workflows/test.yml
+
+  # One stable check context for the branch ruleset to require. The matrix under
+  # `test` produces one context per OS/Python pair, so requiring those directly means
+  # the protection rule silently stops covering a version the moment the matrix
+  # changes. This job's name never changes. See docs/github-config.md.
+  gate:
+    name: gate
+    needs: test
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report matrix result
+        env:
+          RESULT: ${{ needs.test.result }}
+        run: |
+          set -euo pipefail
+          echo "test matrix result: ${RESULT}"
+          [[ "$RESULT" == "success" ]]

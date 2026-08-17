@@ -7,8 +7,12 @@ on:
         description: Version to release, with or without leading v
         required: true
         type: string
-  push:
-    tags: ["v*.*.*"]
+
+# Deliberately NOT triggered by a pushed tag. The agent identity holds
+# contents: write (it must, to push branches), which makes tag creation
+# reachable by an agent; it holds only actions: read, so workflow_dispatch is
+# not. Dispatch is therefore the one entry point a human controls.
+# See docs/github-config.md.
 
 permissions:
   contents: read
@@ -28,31 +32,26 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          # Read-only job: it inspects refs and files, never pushes.
+          persist-credentials: false
 
       - name: Validate version references
         id: metadata
         env:
-          EVENT_NAME: ${{ github.event_name }}
           INPUT_VERSION: ${{ inputs.version }}
-          REF_NAME: ${{ github.ref_name }}
           GITHUB_REF: ${{ github.ref }}
         run: |
           set -euo pipefail
 
-          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
-            if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
-              echo "Manual releases must run from main; got $GITHUB_REF" >&2
-              exit 1
-            fi
-            version="${INPUT_VERSION#v}"
-            tag="v${version}"
-            if git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
-              echo "Tag ${tag} already exists" >&2
-              exit 1
-            fi
-          else
-            tag="$REF_NAME"
-            version="${tag#v}"
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "Releases must run from main; got $GITHUB_REF" >&2
+            exit 1
+          fi
+          version="${INPUT_VERSION#v}"
+          tag="v${version}"
+          if git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
+            echo "Tag ${tag} already exists" >&2
+            exit 1
           fi
 
           if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -81,6 +80,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Build only; nothing here pushes.
+          persist-credentials: false
 
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
@@ -105,14 +107,10 @@ jobs:
           if-no-files-found: error
 
   # Create the tag BEFORE publishing so a PyPI release (irreversible) never
-  # exists without its git tag. Only workflow_dispatch reaches here: on a
-  # tag-push the tag already exists, so this job is skipped and no contents:write
-  # token is minted on that path. A tag pushed with GITHUB_TOKEN does not
-  # retrigger this workflow.
+  # exists without its git tag.
   create-tag:
     name: Create tag
     needs: [release-metadata, build]
-    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -152,12 +150,9 @@ jobs:
 
   publish:
     name: Publish to PyPI
-    # create-tag is skipped on tag-push (the tag already exists) and required on
-    # workflow_dispatch. Proceed when the build succeeded and create-tag did not
-    # fail (success or skipped); !cancelled() lets this override the default
-    # skip-on-skipped-dependency behavior without running on a cancelled run.
+    # create-tag always runs now, so the default success() semantics are what we
+    # want: publish only if the build and the tag both succeeded.
     needs: [build, create-tag]
-    if: ${{ !cancelled() && needs.build.result == 'success' && needs.create-tag.result != 'failure' }}
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
@@ -176,12 +171,6 @@ jobs:
   github-release:
     name: Create GitHub Release
     needs: [release-metadata, publish]
-    # `publish` transitively depends on `create-tag`, which is skipped on a tag-push
-    # (it only runs for workflow_dispatch). Without an explicit condition the default
-    # success() would propagate that skip and skip this job too, so a tag-push would
-    # publish to PyPI but never create the GitHub Release. Mirror `publish`'s guard:
-    # run whenever the publish succeeded and the run was not cancelled.
-    if: ${{ !cancelled() && needs.publish.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -189,6 +178,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          # `gh release create` authenticates through GH_TOKEN below, not through the
+          # checkout credentials, and nothing here pushes with git.
+          persist-credentials: false
 
       - name: Download distributions
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8

@@ -1,9 +1,10 @@
 #!/usr/bin/env python
 """Validate a commit message against this repo's Conventional Commit policy.
 
-Run as a ``commit-msg`` hook (see ``prek.toml``): Git/prek passes the path to the
-file holding the commit message as the first argument. The allowed types and
-optional scopes mirror ``CONTRIBUTING.md`` section Conventions — when that policy
+Run as a ``commit-msg`` hook (configured in ``.pre-commit-config.yaml``; install it
+with ``prek install --hook-type commit-msg``). Git passes the path to the file
+holding the commit message as the first argument. The allowed types and optional
+scopes mirror ``CONTRIBUTING.md`` section "Commit messages" — when that policy
 changes, update both.
 
 Pure stdlib (no deps): the hook must run in any environment without setup.
@@ -22,7 +23,7 @@ import re
 import sys
 from pathlib import Path
 
-# Conventional Commit types allowed by CONTRIBUTING.md section Conventions.
+# Conventional Commit types allowed by CONTRIBUTING.md section "Commit messages".
 ALLOWED_TYPES = (
     "feat",
     "fix",
@@ -35,16 +36,18 @@ ALLOWED_TYPES = (
     "build",
     "revert",
 )
-# Optional scopes listed in CONTRIBUTING.md section Conventions.
+# Optional scopes listed in CONTRIBUTING.md section "Commit messages". One per
+# package layer, plus the cross-cutting concerns that own their own files.
 ALLOWED_SCOPES = (
-    "jobs",
-    "cli-contract",
     "core",
-    "tools",
-    "schemas",
-    "worktree",
+    "backend",
+    "conventions",
+    "testing",
     "packaging",
-    "config",
+    "release",
+    "changelog",
+    "ci",
+    "deps",
 )
 
 # Auto-generated / non-Conventional forms that bypass validation. `revert:` is a

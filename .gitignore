@@ -1,8 +1,23 @@
 __pycache__/
 *.py[co]
 .venv/
+build/
 dist/
+*.egg-info/
+
+# Tool caches
 .pytest_cache/
 .ruff_cache/
+.import_linter_cache/
+.ty_cache/
 .coverage
-*.egg-info/
+coverage.xml
+htmlcov/
+
+# Local secrets and machine state. Never rely on a global gitignore for these —
+# it does not travel with a fresh clone. Note that .claude/ itself is tracked:
+# .claude/skills is a symlink to .agents/skills.
+.env
+.env.*
+.claude/settings.local.json
+.DS_Store

@@ -1,0 +1,26 @@
+# Every path here routes to a human review. Enforced only when the branch ruleset
+# requires code-owner review — see docs/github-config.md.
+
+# Default owner for everything.
+*                           @briandconnelly
+
+# The control plane: an agent that can edit these is not constrained by them.
+/.github/                   @briandconnelly
+/.github/workflows/         @briandconnelly
+/scripts/                   @briandconnelly
+
+# Agent instructions. Changing the rules must be as reviewed as breaking them.
+/AGENTS.md                  @briandconnelly
+/CLAUDE.md                  @briandconnelly
+/.agents/                   @briandconnelly
+/.claude/                   @briandconnelly
+
+# Release surface: version, lockfile, changelog, release procedure.
+/pyproject.toml             @briandconnelly
+/uv.lock                    @briandconnelly
+/CHANGELOG.md               @briandconnelly
+/docs/releasing.md          @briandconnelly
+/docs/github-config.md      @briandconnelly
+
+# Frozen contract; src/pontonier/backend/__init__.py states the compatibility rules.
+/src/pontonier/backend/     @briandconnelly

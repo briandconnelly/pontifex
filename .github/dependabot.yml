@@ -1,0 +1,21 @@
+version: 2
+updates:
+  # Actions are pinned to full commit SHAs (enforced by scripts/check_github_actions_pinning.py),
+  # which means they never update on their own. This is what keeps the pins fresh.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "ci"
+    labels:
+      - dependencies
+
+  - package-ecosystem: uv
+    directory: "/"
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "build"
+    labels:
+      - dependencies
