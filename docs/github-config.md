@@ -137,16 +137,26 @@ gh repo edit briandconnelly/pontonier --delete-branch-on-merge
 ## 5. Audit the agent App's permissions
 
 The tag protection above leaves dispatching the Publish workflow as the remaining path
-to a release, so the agent App should not be able to dispatch workflows. Check what it
-actually holds, signed in as yourself:
+to a release, so the agent App should not be able to dispatch workflows.
 
-```sh
-gh api /user/installations --jq '.installations[] | {app_slug, permissions}'
-```
+**Read the grants in the UI:** <https://github.com/settings/installations> → the
+agent App → *Permissions*. This is the authoritative view and needs no token.
 
-`GET /repos/{owner}/{repo}/installation` does *not* work for this — that endpoint
-requires a GitHub App JWT, not a user token. If the agent installation shows
-`actions: write`, remove it; the agent has no need to trigger workflow runs.
+If the agent installation holds `actions: write`, remove it — the agent has no need to
+trigger workflow runs. `workflows: write` should also stay absent (see the Status
+table above, where its absence is verified by a rejected push).
+
+Two API routes look like they would answer this and do not:
+
+| Endpoint | Why it fails |
+| --- | --- |
+| `GET /user/installations` | Needs a user-to-server token from an OAuth flow. A `gh` CLI token is not one; it returns `403 You must authenticate with an access token authorized to a GitHub App`. |
+| `GET /repos/{owner}/{repo}/installation` | Needs a GitHub App JWT, not a user token. |
+
+The scriptable route is a JWT signed with the App's private key, then
+`GET /app/installations/{installation_id}`, whose response carries `permissions`.
+Mint the JWT the same way `bot-token` does. That reads the App private key, so run it
+as yourself rather than from an agent session.
 
 ## What is deliberately not configured
 
