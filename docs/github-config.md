@@ -142,9 +142,27 @@ to a release, so the agent App should not be able to dispatch workflows.
 **Read the grants in the UI:** <https://github.com/settings/installations> → the
 agent App → *Permissions*. This is the authoritative view and needs no token.
 
-If the agent installation holds `actions: write`, remove it — the agent has no need to
-trigger workflow runs. `workflows: write` should also stay absent (see the Status
-table above, where its absence is verified by a rejected push).
+Verified 2026-08-17:
+
+| Grant | Level |
+| --- | --- |
+| actions, checks, commit statuses, metadata | read |
+| code (contents), issues, pull requests | read and write |
+| workflows, administration, environments | **not granted** |
+
+That set is the intended one. `actions: read` rather than write is what matters most:
+the agent can watch CI but cannot dispatch a workflow, which closes the
+`workflow_dispatch` route to a release. No `administration` means it cannot edit the
+rulesets that constrain it, and no `workflows` means it cannot edit CI — both verified
+by `403`s and a rejected push rather than assumed.
+
+**The residual risk, stated plainly:** `contents: write` is not separable from tag
+creation, and pushing a `v*.*.*` tag triggers `publish.yml`. The agent therefore still
+has one reachable path toward a release. It stops at the `pypi` environment approval,
+which is a human gate — so **an approval request you did not initiate is a signal to
+investigate, not to click**. Closing this properly means either dropping the tag-push
+trigger from `publish.yml` (leaving dispatch, which the agent cannot reach) or a
+dedicated release App as the tag ruleset's bypass actor.
 
 Two API routes look like they would answer this and do not:
 
