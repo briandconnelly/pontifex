@@ -5,6 +5,18 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Release engineering
+
+- The project is renamed **pontifex → pontonier**. The old name collided with
+  the unrelated `pontifex-mcp` on PyPI, which is also MCP-adjacent. A pontonier
+  is the engineer who builds pontoon bridges, which keeps the "not a bridge —
+  what bridges are built from" framing. Nothing was ever published under the old
+  name, so there is no compatibility shim and no deprecation period. Two
+  runtime-visible strings moved with it: throwaway worktrees are now
+  `pontonier-worktree-*`, and the default worktree git identity is
+  `pontonier <pontonier@local>`. All three bridges override both, so neither
+  string reaches a consumer.
+
 ### Hardening
 
 - `JobStore` now confines job ids to the shape it mints (`uuid4().hex`, 32
