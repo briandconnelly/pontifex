@@ -22,7 +22,10 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
     "Topic :: Software Development",
 ]
-# pontonier.core needs only anyio. pydantic arrives with backend/conventions (M1).
+# Every layer of the package depends only on anyio. backend/conventions are plain
+# dataclasses, and pontonier.testing imports no test framework — adding a runtime
+# dependency here changes the contract for all three bridges, so it needs a reason
+# in the changelog, not just a convenient import.
 dependencies = [
     "anyio>=4",
 ]
