@@ -16,6 +16,12 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `pontonier-worktree-*`, and the default worktree git identity is
   `pontonier <pontonier@local>`. All three bridges override both, so neither
   string reaches a consumer.
+- `pyproject.toml` is now the single source for the version. `__version__` reads
+  the installed distribution metadata instead of repeating a literal, so the two
+  can no longer disagree — the drift this replaces was real (`__version__` stuck
+  at 0.3.0.dev0 across two bumps). `tests/test_version.py` now pins the
+  installed metadata to the `pyproject.toml` declaration, which also catches an
+  editable install left stale by a bump without a re-sync.
 
 ### Hardening
 

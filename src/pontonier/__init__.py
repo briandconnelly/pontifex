@@ -10,6 +10,11 @@ Anything not documented as public is internal and may change without notice.
 
 from __future__ import annotations
 
-__version__ = "0.5.0.dev0"
+from importlib.metadata import version as _version
+
+# Single-sourced from the distribution metadata, which hatchling fills from the
+# one declaration in pyproject.toml. Do not hardcode a literal here: the pair
+# drifted once already (__version__ stuck at 0.3.0.dev0 across two bumps).
+__version__ = _version("pontonier")
 
 __all__ = ["__version__"]
