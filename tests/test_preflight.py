@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from pontifex.conventions import preflight
-from pontifex.core import runtime
+from pontonier.conventions import preflight
+from pontonier.core import runtime
 
 
 def _probe(**kwargs) -> preflight.HelpProbe:

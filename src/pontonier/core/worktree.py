@@ -27,15 +27,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from pontifex.core import gitdiff, gitproc
-from pontifex.core.redaction import redact_text
+from pontonier.core import gitdiff, gitproc
+from pontonier.core.redaction import redact_text
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
 
 # mkdtemp prefix for the throwaway worktree's parent dir. Exposed so a job runner
 # can constrain its cleanup to this temp area (see jobs.JobStore cleanup_prefix).
-WORKTREE_PREFIX = "pontifex-worktree-"
+WORKTREE_PREFIX = "pontonier-worktree-"
 
 
 @dataclass(frozen=True)
@@ -50,8 +50,8 @@ class WorktreeConfig:
     build-artifact exclusions when capturing the diff."""
 
     prefix: str = WORKTREE_PREFIX
-    identity_name: str = "pontifex"
-    identity_email: str = "pontifex@local"
+    identity_name: str = "pontonier"
+    identity_email: str = "pontonier@local"
     extra_excludes: tuple[str, ...] = ()
 
 
@@ -103,7 +103,7 @@ def _empty_hooks_dir() -> str:
     etc.) executes during worktree operations. Created once per process and left for
     the OS to reap — it holds nothing sensitive — and deliberately placed *outside*
     any worktree so the sandboxed agent cannot drop a hook file into it."""
-    return tempfile.mkdtemp(prefix="pontifex-nohooks-")
+    return tempfile.mkdtemp(prefix="pontonier-nohooks-")
 
 
 # A configured filter driver's name (the ``<name>`` in ``[filter "<name>"]``) is

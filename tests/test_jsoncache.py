@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from pontifex.core.jsoncache import read_bounded_json
+from pontonier.core.jsoncache import read_bounded_json
 
 
 def test_reads_valid_json(tmp_path: Path):

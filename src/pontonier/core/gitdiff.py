@@ -19,8 +19,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, TypeVar, cast
 
-from pontifex.core import gitproc, streamcap
-from pontifex.core.redaction import DiffRedactor
+from pontonier.core import gitproc, streamcap
+from pontonier.core.redaction import DiffRedactor
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator

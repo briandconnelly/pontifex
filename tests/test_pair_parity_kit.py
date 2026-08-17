@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pontifex.testing import pair_parity
+from pontonier.testing import pair_parity
 
 SYNC = {
     "properties": {

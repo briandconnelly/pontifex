@@ -9,11 +9,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from pontifex.backend.protocol import AgentBackend, RunRequest
-from pontifex.testing.surface_honesty import find_contract_self_contradictions
+from pontonier.backend.protocol import AgentBackend, RunRequest
+from pontonier.testing.surface_honesty import find_contract_self_contradictions
 
 if TYPE_CHECKING:
-    from pontifex.backend.contract import BackendContract
+    from pontonier.backend.contract import BackendContract
 
 
 def check_contract(contract: BackendContract) -> list[str]:

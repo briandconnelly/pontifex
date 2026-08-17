@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from pontifex.conventions import envelope
+from pontonier.conventions import envelope
 
 VOCAB = envelope.BackendErrorVocabulary(
     backend_id="kimi",

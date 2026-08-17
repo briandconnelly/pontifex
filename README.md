@@ -1,6 +1,6 @@
-# pontifex
+# pontonier
 
-Pontifex is the shared core library for agent-bridge MCP servers. An
+Pontonier is the shared core library for agent-bridge MCP servers. An
 agent bridge lets one agent harness call an agent that runs on a
 different model. Three bridges use this library:
 
@@ -8,15 +8,12 @@ different model. Three bridges use this library:
 - [moonbridge](https://github.com/briandconnelly/moonbridge) — Claude Code or Codex → Kimi CLI
 - [claude-in-codex](https://github.com/briandconnelly/claude-in-codex) — Codex → Claude Code CLI
 
-The name is Latin for "bridge-builder": pontifex is not itself a
-bridge — it is what the bridges are built from.
-
-> **Note:** The unrelated PyPI package `agentbridge` is a different
-> project. This library is `pontifex`.
+A pontonier is the engineer who builds pontoon bridges: pontonier is
+not itself a bridge — it is what the bridges are built from.
 
 ## What is in the box
 
-`pontifex.core` — backend-agnostic machinery, extracted from the
+`pontonier.core` — backend-agnostic machinery, extracted from the
 bridges' `_core` packages:
 
 | Module | Purpose |
@@ -32,23 +29,26 @@ bridges' `_core` packages:
 | `workspace` | MCP-root workspace resolution |
 | `jsoncache` | Small JSON file cache |
 
-**Rule:** `pontifex.core` never imports from the rest of the package.
+**Rule:** `pontonier.core` never imports from the rest of the package.
 CI enforces this with import-linter.
 
-`pontifex.conventions` — the shared vocabulary bridges are built from:
+`pontonier.conventions` — the shared vocabulary bridges are built from:
 error taxonomy + repair rules (`envelope`), host-parameterized prompt
 framing (`prompts`), effect-parameterized tool annotations
 (`annotations`), CLI `--help` feature detection (`preflight`), and the
 surface-fingerprint invariant (`fingerprint`). Wire serialization stays
 in each bridge.
 
-`pontifex.backend` — **provisional** (`CONTRACT_API_VERSION = 0`): the
+`pontonier.backend` — **FROZEN** (`CONTRACT_API_VERSION = 1`): the
 `BackendContract` static-facts dataclass, the `AgentBackend` staged run
 lifecycle (`validate_request` → `prepare` → `finalize`/`classify_failure`),
-and a shared failure classifier with fixed precedence. It freezes only
-after all three real adapters pass their conformance and golden fixtures.
+and a shared failure classifier with fixed precedence. Required Protocol
+members and required `BackendContract` fields are stable within a minor
+line; because additive changes to a Protocol or a frozen dataclass are
+breaking, new behavior lands as optional capability protocols or
+defaulted fields.
 
-`pontifex.testing` — importable, framework-agnostic test kit: surface
+`pontonier.testing` — importable, framework-agnostic test kit: surface
 honesty (forbidden-phrase scanning against the built wire), adapter and
 contract conformance, and sync/async tool-pair parity. Checks return
 violation lists; wire them into any harness.

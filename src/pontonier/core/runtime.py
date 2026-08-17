@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, cast
 import anyio
 from anyio.to_thread import run_sync
 
-from pontifex.core import streamcap
+from pontonier.core import streamcap
 
 if TYPE_CHECKING:
     from collections.abc import Callable

@@ -10,7 +10,7 @@ import time
 
 import pytest
 
-from pontifex.core import streamcap
+from pontonier.core import streamcap
 
 
 def test_iter_bounded_lines_basic():

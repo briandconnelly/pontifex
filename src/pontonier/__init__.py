@@ -1,8 +1,8 @@
-"""Pontifex: shared core library for agent-bridge MCP servers.
+"""Pontonier: shared core library for agent-bridge MCP servers.
 
-The supported public surface in this release is ``pontifex.core`` (see its
-docstring for the module inventory) and ``pontifex.conventions`` /
-``pontifex.testing``, and ``pontifex.backend`` (FROZEN at
+The supported public surface in this release is ``pontonier.core`` (see its
+docstring for the module inventory) and ``pontonier.conventions`` /
+``pontonier.testing``, and ``pontonier.backend`` (FROZEN at
 ``CONTRACT_API_VERSION = 1``: required members are stable within a minor line;
 new behavior lands as defaulted fields or optional capability protocols).
 Anything not documented as public is internal and may change without notice.

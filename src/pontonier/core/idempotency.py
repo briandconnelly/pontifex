@@ -2,7 +2,7 @@
 
 A client passes an ``idempotency_key`` with a run; the index lets a retry after a
 transport drop **replay** an existing run instead of starting (and paying for) a
-duplicate. It sits beside the :class:`~pontifex.core.jobs.JobStore` and is
+duplicate. It sits beside the :class:`~pontonier.core.jobs.JobStore` and is
 driven by it — stdlib only, and (like everything in ``_core``) it never imports from
 the parent package.
 

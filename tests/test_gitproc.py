@@ -10,7 +10,7 @@ import time
 
 import pytest
 
-from pontifex.core import gitproc, streamcap
+from pontonier.core import gitproc, streamcap
 
 _ENV = {"PATH": os.environ.get("PATH", "/usr/bin:/bin")}
 

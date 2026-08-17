@@ -21,7 +21,7 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### 0.5.0 (THE PROTOCOL FREEZE — `contract_api_version = 1`)
 
-- `pontifex.backend` is FROZEN. The plan's freeze criterion — all three real
+- `pontonier.backend` is FROZEN. The plan's freeze criterion — all three real
   adapters compile, type-check, and pass conformance and differential fixtures
   — was met and then exceeded: each bridge's production orchestration now
   stages every model-bearing run through its adapter's `prepare()`
@@ -119,30 +119,30 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### 0.2.0 (milestone M1 — conventions + provisional protocol)
 
-- `pontifex.conventions.envelope`: shared error taxonomy — universal codes
+- `pontonier.conventions.envelope`: shared error taxonomy — universal codes
   (the verified intersection across the three bridges), backend-prefixed code
   minting, feature-gated codes (`transfer`, `model_validation`,
   `empty_response_detection`), and per-code `RepairRule` tables parameterized
   by a `BackendErrorVocabulary`. Wire serialization deliberately stays
   consumer-side.
-- `pontifex.conventions.prompts`: the shared framing/builders, with the host
+- `pontonier.conventions.prompts`: the shared framing/builders, with the host
   harness name as a parameter; `framings("Claude Code")` reproduces the
   source bridges' prose byte-for-byte (pinned by tests).
-- `pontifex.conventions.annotations`: tool-annotation builders parameterized
+- `pontonier.conventions.annotations`: tool-annotation builders parameterized
   by declared effects (`AnnotationEffects`) instead of universal constants —
   the bridges' differing values are deliberate positions, now explicit.
-- `pontifex.conventions.preflight`: `HelpProbe` (instance-cached `--help`
+- `pontonier.conventions.preflight`: `HelpProbe` (instance-cached `--help`
   feature detection, fail-open) generalizing the per-repo module.
-- `pontifex.conventions.fingerprint`: the surface-digest / fingerprint-bump
+- `pontonier.conventions.fingerprint`: the surface-digest / fingerprint-bump
   invariant as reusable, framework-agnostic mechanics.
-- `pontifex.backend` (**PROVISIONAL**, `CONTRACT_API_VERSION = 0`):
+- `pontonier.backend` (**PROVISIONAL**, `CONTRACT_API_VERSION = 0`):
   `BackendContract` (static facts: flag classes, failure-signature tables,
   field-scoped model-catalog authority, typed extra-args policy, isolation
   policy, limits), the `AgentBackend` protocol as a staged lifecycle
   (`validate_request` → `prepare` → `finalize`/`classify_failure`), shared
   `RunRequest`/`PreparedRun`/`RunOutcome`/`ExecResult` types, and a shared
   failure classifier with fixed precedence and a backend hook.
-- `pontifex.testing`: importable, framework-agnostic test kit —
+- `pontonier.testing`: importable, framework-agnostic test kit —
   surface-honesty phrase scanning, adapter/contract conformance checks
   (including the mandatory pre-spend effort-validation invariant), and
   sync/async pair parity. No pytest dependency.
@@ -155,7 +155,7 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### 0.1.0 (milestone M0 — core extraction)
 
-- `pontifex.core`: the CLI-agnostic machinery extracted from moonbridge's
+- `pontonier.core`: the CLI-agnostic machinery extracted from moonbridge's
   `_core` (jobs, worktree, gitdiff, redaction, runtime, gitproc, streamcap,
   idempotency, workspace, jsoncache), carrying the redaction
   trailing-newline fix and the orphan-process sweep.

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from pontifex.backend.contract import (
+from pontonier.backend.contract import (
     BackendContract,
     ExtraArgsPolicy,
     FailureSignatures,

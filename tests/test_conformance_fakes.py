@@ -25,9 +25,9 @@ from pathlib import Path
 import pytest
 
 from conftest import make_run
-from pontifex.backend import classify
-from pontifex.backend.contract import FailureSignatures, IsolationPolicy, Limits, ModelCatalog
-from pontifex.backend.protocol import (
+from pontonier.backend import classify
+from pontonier.backend.contract import FailureSignatures, IsolationPolicy, Limits, ModelCatalog
+from pontonier.backend.protocol import (
     AgentBackend,
     ClassifiedFailure,
     ExecResult,
@@ -36,7 +36,7 @@ from pontifex.backend.protocol import (
     RunRequest,
     Usage,
 )
-from pontifex.testing import conformance
+from pontonier.testing import conformance
 from test_contract import make_contract
 
 

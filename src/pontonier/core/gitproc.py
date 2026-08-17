@@ -39,7 +39,7 @@ import threading
 import time
 from typing import TYPE_CHECKING, TypeVar
 
-from pontifex.core import streamcap
+from pontonier.core import streamcap
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator

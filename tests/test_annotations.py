@@ -7,7 +7,7 @@ annotations exactly, so adopting the builder changes nothing on the wire.
 
 from __future__ import annotations
 
-from pontifex.conventions import annotations
+from pontonier.conventions import annotations
 
 # codex-in-claude / moonbridge position: writes stay in a throwaway worktree;
 # job reads advertised read-only despite lazy maintenance.

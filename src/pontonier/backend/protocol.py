@@ -11,7 +11,7 @@ handshake file carries the prompt, the answer pointer, and the generated
 read-only agent profile in one atomic staging step.
 
 The library does not run the process itself in v1: the consumer's
-orchestration owns spawn/timeout/cancel via :mod:`pontifex.core.runtime` and
+orchestration owns spawn/timeout/cancel via :mod:`pontonier.core.runtime` and
 feeds the outcome back through ``finalize``/``classify_failure``. That keeps
 each bridge's job-worker plumbing untouched while making every
 backend-specific decision flow through the adapter.
@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 if TYPE_CHECKING:
     from contextlib import AbstractAsyncContextManager
 
-    from pontifex.core.runtime import CommandRun
+    from pontonier.core.runtime import CommandRun
 
 
 @dataclass(frozen=True)

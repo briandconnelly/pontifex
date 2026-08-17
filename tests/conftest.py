@@ -7,8 +7,8 @@ import subprocess
 
 import pytest
 
-from pontifex.core import gitdiff
-from pontifex.core.runtime import CommandRun
+from pontonier.core import gitdiff
+from pontonier.core.runtime import CommandRun
 
 # Git environment variables that redirect where git reads/writes its object store,
 # index, and repo config. If pytest is invoked with any of these exported (e.g. by a

@@ -57,7 +57,7 @@ from enum import StrEnum
 from pathlib import Path
 from uuid import uuid4
 
-from pontifex.core import idempotency
+from pontonier.core import idempotency
 
 logger = logging.getLogger(__name__)
 

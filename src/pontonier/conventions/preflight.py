@@ -23,7 +23,7 @@ import re
 import time
 from dataclasses import dataclass, field
 
-from pontifex.core import runtime
+from pontonier.core import runtime
 
 _LONG_FLAG_RE = re.compile(r"--[a-z][a-z0-9-]+")
 

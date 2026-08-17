@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pontifex.core import workspace
+from pontonier.core import workspace
 
 
 def test_resolve_explicit_param(tmp_path):

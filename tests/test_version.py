@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import importlib.metadata
 
-import pontifex
+import pontonier
 
 
 def test_dunder_version_matches_distribution_metadata():
-    assert pontifex.__version__ == importlib.metadata.version("pontifex")
+    assert pontonier.__version__ == importlib.metadata.version("pontonier")

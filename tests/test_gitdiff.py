@@ -11,8 +11,8 @@ from pathlib import Path
 import pytest
 
 from conftest import run_git
-from pontifex.core import gitdiff, streamcap
-from pontifex.core.redaction import DiffRedactor
+from pontonier.core import gitdiff, streamcap
+from pontonier.core.redaction import DiffRedactor
 
 
 def _git(cwd, *args):

@@ -13,7 +13,7 @@ import time
 
 import pytest
 
-from pontifex.core import idempotency as idem
+from pontonier.core import idempotency as idem
 
 
 # --------------------------------------------------------------- pure helpers

@@ -10,7 +10,7 @@ import sys
 import anyio
 import pytest
 
-from pontifex.core import runtime
+from pontonier.core import runtime
 
 
 def _py(code: str) -> list[str]:

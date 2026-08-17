@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from pontifex.conventions import fingerprint
+from pontonier.conventions import fingerprint
 
 FP = "some-bridge/0.1/schema-7"
 SURFACE = {"tools": ["a", "b"], "codes": ["x"]}

@@ -18,7 +18,7 @@ from pathlib import Path
 import anyio
 import pytest
 
-from pontifex.core import runtime
+from pontonier.core import runtime
 from test_orphan_sweep import _spawn_detached_child, _wait_for_orphan
 
 
@@ -37,7 +37,7 @@ def _wait_no_orphans(marker: str, timeout: float = 10.0) -> bool:
 
 @pytest.fixture
 def marker() -> str:
-    return f"pontifex-worktree-{uuid.uuid4().hex}"
+    return f"pontonier-worktree-{uuid.uuid4().hex}"
 
 
 def _sleeper() -> subprocess.Popen:

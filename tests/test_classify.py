@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from conftest import make_run
-from pontifex.backend import classify
-from pontifex.backend.contract import FailureSignatures
-from pontifex.backend.protocol import ClassifiedFailure, RunOutcome, RunRequest
-from pontifex.core import runtime
+from pontonier.backend import classify
+from pontonier.backend.contract import FailureSignatures
+from pontonier.backend.protocol import ClassifiedFailure, RunOutcome, RunRequest
+from pontonier.core import runtime
 from test_contract import make_contract
 
 SIGS = FailureSignatures(

@@ -46,4 +46,4 @@ jobs:
           set -euo pipefail
           uv build --wheel
           uv run --isolated --no-project --with dist/*.whl \
-            python -c "import pontifex.core.jobs, pontifex.core.worktree; import pontifex; print(pontifex.__version__)"
+            python -c "import pontonier.core.jobs, pontonier.core.worktree; import pontonier; print(pontonier.__version__)"

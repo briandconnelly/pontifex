@@ -18,13 +18,13 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
-from pontifex.backend.protocol import ClassifiedFailure
+from pontonier.backend.protocol import ClassifiedFailure
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from pontifex.backend.contract import BackendContract
-    from pontifex.backend.protocol import RunOutcome, RunRequest
+    from pontonier.backend.contract import BackendContract
+    from pontonier.backend.protocol import RunOutcome, RunRequest
 
 
 def classify(

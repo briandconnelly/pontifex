@@ -1,5 +1,5 @@
 [project]
-name = "pontifex"
+name = "pontonier"
 version = "0.5.0.dev0"
 description = "Shared core library for agent-bridge MCP servers (codex-in-claude, moonbridge, claude-in-codex)"
 readme = "README.md"
@@ -22,22 +22,22 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
     "Topic :: Software Development",
 ]
-# pontifex.core needs only anyio. pydantic arrives with backend/conventions (M1).
+# pontonier.core needs only anyio. pydantic arrives with backend/conventions (M1).
 dependencies = [
     "anyio>=4",
 ]
 
 [project.urls]
-Homepage = "https://github.com/briandconnelly/pontifex"
-Repository = "https://github.com/briandconnelly/pontifex"
-Issues = "https://github.com/briandconnelly/pontifex/issues"
+Homepage = "https://github.com/briandconnelly/pontonier"
+Repository = "https://github.com/briandconnelly/pontonier"
+Issues = "https://github.com/briandconnelly/pontonier/issues"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/pontifex"]
+packages = ["src/pontonier"]
 
 [dependency-groups]
 dev = [
@@ -80,10 +80,10 @@ unresolved-import = "warn"
 asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["."]
-addopts = "--cov=pontifex --cov-report=term-missing --strict-markers --strict-config"
+addopts = "--cov=pontonier --cov-report=term-missing --strict-markers --strict-config"
 
 [tool.coverage.run]
-source = ["src/pontifex"]
+source = ["src/pontonier"]
 branch = true
 
 [tool.coverage.report]
@@ -91,13 +91,13 @@ fail_under = 95
 show_missing = true
 
 [tool.importlinter]
-root_package = "pontifex"
+root_package = "pontonier"
 
-# The one-way rule: pontifex.core must not import from the rest of pontifex.
+# The one-way rule: pontonier.core must not import from the rest of pontonier.
 # This is what keeps core reusable by every consumer regardless of which
 # backend/conventions pieces they adopt.
 [[tool.importlinter.contracts]]
 name = "core is a leaf layer"
 type = "forbidden"
-source_modules = ["pontifex.core"]
-forbidden_modules = ["pontifex.backend", "pontifex.conventions", "pontifex.testing"]
+source_modules = ["pontonier.core"]
+forbidden_modules = ["pontonier.backend", "pontonier.conventions", "pontonier.testing"]

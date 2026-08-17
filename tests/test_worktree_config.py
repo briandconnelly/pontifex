@@ -11,7 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from conftest import run_git
-from pontifex.core import worktree
+from pontonier.core import worktree
 
 
 def _init_repo(path: Path) -> None:
@@ -25,9 +25,9 @@ def _init_repo(path: Path) -> None:
 
 def test_default_config_values():
     cfg = worktree.DEFAULT_CONFIG
-    assert cfg.prefix == worktree.WORKTREE_PREFIX == "pontifex-worktree-"
-    assert cfg.identity_name == "pontifex"
-    assert cfg.identity_email == "pontifex@local"
+    assert cfg.prefix == worktree.WORKTREE_PREFIX == "pontonier-worktree-"
+    assert cfg.identity_name == "pontonier"
+    assert cfg.identity_email == "pontonier@local"
     assert cfg.extra_excludes == ()
 
 

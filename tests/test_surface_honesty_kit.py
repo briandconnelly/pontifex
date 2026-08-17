@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pontifex.testing import surface_honesty
+from pontonier.testing import surface_honesty
 
 PHRASES = ("kimi exec", "read-only sandbox")
 

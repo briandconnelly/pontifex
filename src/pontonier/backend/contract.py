@@ -1,6 +1,6 @@
 """BackendContract: the static facts about one backend CLI, as pure data.
 
-Behavior lives in the :class:`~pontifex.backend.protocol.AgentBackend`
+Behavior lives in the :class:`~pontonier.backend.protocol.AgentBackend`
 implementation; everything here is declarative and inspectable — the material
 capability output, conformance checks, and the shared failure classifier are
 driven by. Each bridge's ``cli_contract.py`` collapses into one instance of

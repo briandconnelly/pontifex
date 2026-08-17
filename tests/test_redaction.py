@@ -9,7 +9,7 @@ import time
 
 import pytest
 
-from pontifex.core import redaction
+from pontonier.core import redaction
 
 
 def _any_marker_in(text: str) -> bool:
