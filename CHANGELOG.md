@@ -10,6 +10,15 @@ This file is decision history, not current policy. Rules that still bind live in
 
 ### Repository
 
+- `AGENTS.md` gains a **Bridge intake** section: what this library accepts from a
+  consuming bridge, and what stays in the bridge. It states the intake criterion, that
+  bridge policy stays downstream, that a mixed change lands in two repositories, that a
+  fix a bridge waits for needs a release and not just a merge, that a change to a value
+  bridges expose is recorded here so each bridge can judge it, and where each half of a
+  change is tested. Previously only the downstream half of that decision was written
+  down, in `codex-in-claude`'s `AGENTS.md`; a bridge could read "send it upstream" with
+  nothing saying what upstream accepts. The two sections link to each other instead of
+  restating each other.
 - The repository now carries an instruction layer: `AGENTS.md` (canonical norms,
   with `CLAUDE.md` pointing at it), `CONTRIBUTING.md` (setup, the gate, commit
   format), `docs/releasing.md`, and `docs/github-config.md` for the enforced
