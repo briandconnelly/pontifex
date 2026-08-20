@@ -28,7 +28,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pontonier.core import gitdiff, gitproc
-from pontonier.core.redaction import _CONTROL_CHARS_KEEPING_LF_RE, redact_text
+from pontonier.core.redaction import (
+    _CONTROL_CHARS_KEEPING_LF_RE,
+    _preserving_key_block_failure,
+    redact_text,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
@@ -999,10 +1003,17 @@ def sanitize_echo_prose(text: str | None, aliases: Iterable[str]) -> str | None:
 
     ``aliases`` are the real worktree paths and so contain no control characters (this
     library creates them under a temp root it names itself); stripping the TEXT is
-    therefore what closes the gap, and the aliases are matched as given."""
+    therefore what closes the gap, and the aliases are matched as given.
+
+    The key-block guard applies here for the same reason it applies to
+    ``redaction.sanitize_echo``: keeping line feeds does not exempt this helper, because a
+    control character OTHER than a line feed can equally damage an END marker
+    (``-----END … PRIVATE KEY---\\x00--``). Stripping it terminates the block and uncovers
+    what the blanket covered, so the unstripped text's coverage is restored first."""
     if not text:
         return text
-    return sanitize_prose(_CONTROL_CHARS_KEEPING_LF_RE.sub("", text), aliases)
+    stripped = _CONTROL_CHARS_KEEPING_LF_RE.sub("", text)
+    return sanitize_prose(_preserving_key_block_failure(stripped, text), aliases)
 
 
 def remove(repo: str, worktree: Worktree, *, timeout: int) -> None:

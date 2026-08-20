@@ -1576,3 +1576,23 @@ def test_sanitize_echo_prose_keeps_line_feeds_even_when_a_secret_straddles_one()
     """
     out = worktree.sanitize_echo_prose("sk-\nant-api03-" + "A" * 40, ALIASES) or ""
     assert "\n" in out
+
+
+@pytest.mark.parametrize("ch", ["\x00", "\x1b", "\x7f", "\x85"])
+def test_sanitize_echo_prose_never_cancels_a_key_blocks_fail_closed_blanket(ch):
+    """Keeping line feeds does not exempt this helper from the key-block guard.
+
+    A control character OTHER than a line feed damages an END marker just as well, so
+    stripping it would terminate a block that was failing closed and uncover everything the
+    blanket covered. Caught only because the redaction-side guard prompted the question
+    here too — the LF policy differs between the helpers, the key-block rule does not.
+    """
+    body = "MIIEowIBAAKCAQEA" + "b" * 40
+    text = (
+        f"-----BEGIN RSA PRIVATE KEY-----\n{body}\n"
+        f"-----END RSA PRIVATE KEY---{ch}--\ntrailing secret area"
+    )
+    # Positive control: unstripped, the damaged END really does leave the block open.
+    assert "trailing secret area" not in (worktree.sanitize_prose(text, ALIASES) or "")
+    assert "trailing secret area" not in (worktree.sanitize_echo_prose(text, ALIASES) or "")
+    assert body not in (worktree.sanitize_echo_prose(text, ALIASES) or "")
