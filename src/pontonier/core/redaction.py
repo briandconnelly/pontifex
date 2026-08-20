@@ -8,10 +8,6 @@ from __future__ import annotations
 
 import re
 import shlex
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from collections.abc import Callable
 
 # Files whose contents are too sensitive to send: their hunks are dropped (the
 # header is kept so a reviewer still sees the file changed).
@@ -1139,6 +1135,41 @@ _CONTROL_CHARS_RE = re.compile(r"[\x00-\x1F\x7F-\x9F]")
 _CONTROL_CHARS_KEEPING_LF_RE = re.compile(r"[\x00-\x09\x0B-\x1F\x7F-\x9F]")
 
 
+def _ends_inside_key_block(text: str) -> bool:
+    """Whether the stateful key-block pass would still be OPEN at the end of ``text``.
+
+    Mirrors :func:`_redact_key_blocks_in_text`'s traversal exactly — same line split, same
+    guard — but keeps only the final state, which is what the fail-closed rule turns on."""
+    in_block = False
+    for line in text.split("\n"):
+        if in_block or _PRIVATE_KEY_BEGIN_RE.search(line):
+            _, _, in_block = _redact_key_content(line, in_block)
+    return in_block
+
+
+def _preserving_key_block_failure(stripped: str, original: str) -> str:
+    """Keep stripping from ever WEAKENING the key-block pass's fail-closed decision.
+
+    The key-block pass redacts an unterminated block to end-of-text. A control character
+    wedged into an END marker is precisely what makes a block look unterminated — so
+    deleting it TERMINATES the block, and everything the blanket used to cover becomes
+    visible. That is the one direction in which stripping can disclose MORE than not
+    stripping, and it is reachable on purpose: an attacker who can influence echoed text
+    can cancel a blanket that was covering someone else's secret further down.
+
+    So when the ORIGINAL text ends inside a block and the stripped text does not, the
+    stripped text is cut back to its opening marker and the remainder replaced by the
+    redaction marker — restoring exactly the coverage the unstripped text had. The
+    reverse case needs nothing: a block the strip OPENS (by repairing a damaged BEGIN)
+    redacts more, not less, and is left alone."""
+    if not _ends_inside_key_block(original) or _ends_inside_key_block(stripped):
+        return stripped
+    begin = _PRIVATE_KEY_BEGIN_RE.search(stripped)
+    if begin is None:  # pragma: no cover - the original's BEGIN survives stripping
+        return stripped
+    return stripped[: begin.end()] + "\n" + _SECRET_VALUE_MARKER
+
+
 def sanitize_echo(text: str | None) -> str:
     """Delete control characters, then redact — for a single-token echoed span.
 
@@ -1164,13 +1195,19 @@ def sanitize_echo(text: str | None) -> str:
     the caller, and that redaction is never handed text it cannot match for a reason this
     function introduced.
 
+    Stripping must never disclose MORE than not stripping, and one case would have:
+    deleting a control character out of a damaged END marker terminates a key block that
+    was failing closed, uncovering everything the blanket covered. See
+    :func:`_preserving_key_block_failure`, which restores the unstripped text's coverage.
+
     Truncation is deliberately NOT applied here. Callers bound their own echoes, and they
     disagree about both the limit and the direction (head or tail); baking one in would
     silently retighten every one of them. Whatever bound a caller applies belongs AFTER
     this call, so a secret straddling the cut still has the tail its pattern needs."""
     if not text:
         return text or ""
-    return redact_text(_CONTROL_CHARS_RE.sub("", text)) or ""
+    stripped = _CONTROL_CHARS_RE.sub("", text)
+    return redact_text(_preserving_key_block_failure(stripped, text)) or ""
 
 
 def sanitize_echo_prose(text: str | None) -> str:
@@ -1206,24 +1243,22 @@ def sanitize_echo_prose(text: str | None) -> str:
 
     This is a policy, not a caller-selectable flag: there is no argument by which a caller
     can ask for the unsafe half. Choosing between this function and
-    :func:`sanitize_echo` is a choice of what the text IS, not of an ordering."""
+    :func:`sanitize_echo` is a choice of what the text IS, not of an ordering.
+
+    Both views are computed from the ORIGINAL text; neither is ever re-sanitized, so
+    :func:`redact_text` does not need to be idempotent for this to hold.
+
+    ``worktree.sanitize_echo_prose`` deliberately does NOT share this policy — deleting a
+    line feed there destroys the delimiter its alias matching needs, disclosing a dead
+    absolute path. See that function; the trade is different because the passes are."""
     if not text:
         return text or ""
-    return _echo_prose(text, redact_text)
 
+    def view(pattern: re.Pattern[str]) -> str:
+        return redact_text(_preserving_key_block_failure(pattern.sub("", text), text)) or ""
 
-def _echo_prose(text: str, sanitize: Callable[[str], str | None]) -> str:
-    """The newline policy of :func:`sanitize_echo_prose`, over any text sanitizer.
-
-    Factored out so the worktree-aware echo helper (``worktree.sanitize_echo_prose``,
-    whose sanitizer also relativizes dead worktree paths) runs the SAME decision rather
-    than a second copy of it that can drift. ``sanitize`` must be idempotent — both
-    callers' are, and each pins that with its own test.
-
-    The rule and its rationale live on :func:`sanitize_echo_prose`; do not restate them
-    here."""
-    collapsed = sanitize(_CONTROL_CHARS_RE.sub("", text)) or ""
-    keeping_lf = sanitize(_CONTROL_CHARS_KEEPING_LF_RE.sub("", text)) or ""
+    collapsed = view(_CONTROL_CHARS_RE)
+    keeping_lf = view(_CONTROL_CHARS_KEEPING_LF_RE)
     return keeping_lf if keeping_lf.replace("\n", "") == collapsed else collapsed
 
 

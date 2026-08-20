@@ -1532,12 +1532,6 @@ def test_sanitize_echo_prose_keeps_newlines_in_an_ordinary_diagnostic():
     assert out == "line one\nfailed at ./x.py\nline three"
 
 
-def test_sanitize_echo_prose_collapses_when_a_newline_splits_a_secret():
-    secret = "sk-ant-api03-" + "A" * 40
-    out = worktree.sanitize_echo_prose("sk-\nant-api03-" + "A" * 40, ALIASES)
-    assert secret not in out
-
-
 def test_sanitize_echo_prose_deletes_non_newline_controls():
     out = worktree.sanitize_echo_prose("a\x1b[31mb\nc\x07d", ALIASES)
     assert out == "a[31mb\ncd"
@@ -1552,3 +1546,33 @@ def test_sanitize_echo_prose_is_idempotent():
     text = f"boom \x1b[31mRED\x1b[0m at {ROOT}/x.py\napi_key=" + "Z" * 32
     once = worktree.sanitize_echo_prose(text, ALIASES)
     assert worktree.sanitize_echo_prose(once, ALIASES) == once
+
+
+def test_sanitize_echo_prose_keeps_line_feeds_so_a_line_initial_alias_still_matches():
+    """Regression: deleting LF disclosed a dead absolute worktree path.
+
+    `_replace_aliases` requires a delimiter to the LEFT of an alias. A path that starts a
+    line has one — the line feed — until the line feed is deleted, at which point it
+    inherits the previous line's last character and no longer matches. The absolute path
+    then rides out into the envelope, which is exactly the #420 failure this helper exists
+    to prevent. So this function keeps line feeds unconditionally, unlike its
+    redaction-only sibling.
+    """
+    text = f"prefix\n{ROOT}/file"
+    out = worktree.sanitize_echo_prose(text, ALIASES) or ""
+    assert ROOT not in out, out
+    assert out == "prefix\n./file"
+    # Positive control: collapsing really is what breaks it, so the assertion above
+    # measures the line-feed policy rather than a path that was never at risk.
+    assert ROOT in (worktree.sanitize_prose(text.replace("\n", ""), ALIASES) or "")
+
+
+def test_sanitize_echo_prose_keeps_line_feeds_even_when_a_secret_straddles_one():
+    """The accepted cost of that policy, pinned so it is a decision and not a surprise.
+
+    A secret split at a line feed is not rejoined here, so the redactor does not match it —
+    the same best-effort limit that applies to a secret split by any other character. The
+    alternative (collapsing) trades a rare miss for a certain disclosure of a dead path.
+    """
+    out = worktree.sanitize_echo_prose("sk-\nant-api03-" + "A" * 40, ALIASES) or ""
+    assert "\n" in out

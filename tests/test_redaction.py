@@ -3330,3 +3330,33 @@ def test_a_printable_escape_payload_still_defeats_redaction():
     out = redaction.sanitize_echo(secret[:6] + "\x1b[31m" + secret[6:])
     assert "[31m" in out and "\x1b" not in out
     assert secret not in out  # not contiguous, so not reassembled either
+
+
+@pytest.mark.parametrize("ch", ["\x00", "\n", "\x1b", "\x7f", "\x85"])
+def test_stripping_never_cancels_a_key_blocks_fail_closed_blanket(ch):
+    """Stripping must never disclose MORE than not stripping.
+
+    The key-block pass redacts an unterminated block to end-of-text. A control character
+    wedged into the END marker is exactly what makes a block look unterminated — so
+    deleting it would TERMINATE the block and uncover everything the blanket covered. That
+    is reachable on purpose: an attacker who can influence echoed text could cancel a
+    blanket that was covering someone else's secret further down. `_preserving_key_block_failure`
+    restores the original's coverage instead.
+    """
+    body = "MIIEowIBAAKCAQEA" + "b" * 40
+    text = f"-----BEGIN RSA PRIVATE KEY-----{body}-----END RSA PRIVATE KEY---{ch}--trailing"
+    # Positive control: unstripped, the damaged END really does leave the block open, so
+    # this measures the guard rather than a marker that was never damaged.
+    assert "trailing" not in (redaction.redact_text(text) or "")
+    assert "trailing" not in redaction.sanitize_echo(text)
+    assert "trailing" not in redaction.sanitize_echo_prose(text)
+    assert body not in redaction.sanitize_echo(text)
+
+
+def test_a_repaired_begin_marker_is_left_alone_because_it_redacts_more():
+    """The reverse case needs no guard: stripping that OPENS a block covers more, not
+    less, so it is the safe direction and is deliberately not undone."""
+    body = "MIIEowIBAAKCAQEA" + "b" * 40
+    text = f"-----BEGIN RSA PRIVATE\x00 KEY-----{body}\ntrailing"
+    assert body in (redaction.redact_text(text) or "")  # damaged BEGIN: no block at all
+    assert body not in redaction.sanitize_echo(text)  # repaired: body redacted

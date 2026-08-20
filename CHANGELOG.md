@@ -25,11 +25,25 @@ This file is decision history, not current policy. Rules that still bind live in
   diagnostic the redactor did not touch across a line boundary; once a redaction meets a
   boundary the text collapses, deliberately. Neither truncates — callers disagree about
   both the bound and the direction, so each applies its own, after the call.
-- `worktree.sanitize_echo_prose`: the same policy ahead of `sanitize_prose`'s alias
+
+  Stripping never discloses more than not stripping. One case would have: deleting a
+  control character out of a damaged `-----END … PRIVATE KEY-----` marker terminates a
+  block that was failing closed, uncovering everything its blanket redaction covered —
+  reachable on purpose by an attacker cancelling a blanket that was protecting someone
+  else's secret further down. Both helpers restore the unstripped text's coverage in that
+  case. The reverse (a repaired `BEGIN` marker, which redacts more) is left alone.
+- `worktree.sanitize_echo_prose`: the same stripping ahead of `sanitize_prose`'s alias
   staging. A control character defeats relativization for the same reason it defeats
   redaction — alias matching is an exact string match — so a corrupted worktree path
   would otherwise ride out into an envelope after the worktree is gone. Stripping the
   *output* of `sanitize_prose` cannot fix that: by then the miss has already happened.
+
+  This helper keeps line feeds **unconditionally**, unlike its redaction-only sibling.
+  Deleting one joins two lines, and a path that started a line inherits the previous
+  line's last character in front of it; alias matching requires a delimiter there, so the
+  path no longer matches and the dead absolute path is disclosed. That failure is common
+  and certain, while collapsing would only buy the rare case of a secret split at exactly
+  a line feed — already outside what best-effort redaction promises.
 
 ### Changed
 

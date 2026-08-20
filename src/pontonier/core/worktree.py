@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pontonier.core import gitdiff, gitproc
-from pontonier.core.redaction import _echo_prose, redact_text
+from pontonier.core.redaction import _CONTROL_CHARS_KEEPING_LF_RE, redact_text
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
@@ -971,8 +971,7 @@ def sanitize_prose(text: str | None, aliases: Iterable[str]) -> str | None:
 
 def sanitize_echo_prose(text: str | None, aliases: Iterable[str]) -> str | None:
     """:func:`sanitize_prose` for text bound for an ERROR envelope: control characters
-    are deleted ahead of the staging pass, under the newline policy of
-    ``redaction.sanitize_echo_prose``.
+    are deleted ahead of the staging pass.
 
     Use this instead of :func:`sanitize_prose` wherever the text is a diagnostic being
     echoed back to a caller. A control character defeats BOTH passes this function
@@ -988,12 +987,22 @@ def sanitize_echo_prose(text: str | None, aliases: Iterable[str]) -> str | None:
     one function and not a composition a caller performs — the ordering is not
     theirs to pick.
 
+    LINE FEEDS ARE KEPT HERE, unconditionally — this is the one place the policy differs
+    from ``redaction.sanitize_echo_prose``, which may collapse them. Deleting a line feed
+    joins two lines, and a path that started a line then acquires the previous line's last
+    character in front of it. ``_replace_aliases`` requires a delimiter on the left, so the
+    alias no longer matches and the dead absolute path is disclosed — ``"prefix\\n<root>/f"``
+    collapses to ``"prefix<root>/f"`` and comes back unrelativized. That failure is both
+    common (stderr lines routinely begin with a path) and certain, while what collapsing
+    would buy is catching a secret split at exactly a line feed — rare, and already outside
+    what best-effort redaction promises. So the trade goes the other way here.
+
     ``aliases`` are the real worktree paths and so contain no control characters (this
     library creates them under a temp root it names itself); stripping the TEXT is
     therefore what closes the gap, and the aliases are matched as given."""
     if not text:
         return text
-    return _echo_prose(text, lambda t: sanitize_prose(t, aliases))
+    return sanitize_prose(_CONTROL_CHARS_KEEPING_LF_RE.sub("", text), aliases)
 
 
 def remove(repo: str, worktree: Worktree, *, timeout: int) -> None:
