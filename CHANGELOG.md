@@ -38,12 +38,17 @@ This file is decision history, not current policy. Rules that still bind live in
   would otherwise ride out into an envelope after the worktree is gone. Stripping the
   *output* of `sanitize_prose` cannot fix that: by then the miss has already happened.
 
-  This helper keeps line feeds **unconditionally**, unlike its redaction-only sibling.
-  Deleting one joins two lines, and a path that started a line inherits the previous
-  line's last character in front of it; alias matching requires a delimiter there, so the
-  path no longer matches and the dead absolute path is disclosed. That failure is common
-  and certain, while collapsing would only buy the rare case of a secret split at exactly
-  a line feed — already outside what best-effort redaction promises.
+  WHERE the strip goes is the subtle part, and both ends are wrong. Stripping *before* the
+  staging destroys alias matching from the other side: `_replace_aliases` needs a delimiter
+  beside an alias, and a control character is often the delimiter it has — line feed, tab,
+  and carriage return all behave this way, so `"prefix\t<root>/f.py"` came back with the
+  absolute path intact. So the strip runs in the one window where neither failure is
+  reachable: after staging (aliases sit behind alphanumeric placeholders that deleting
+  characters cannot damage) and before redaction. Staging then runs a second time on the
+  transformed text, because the two passes catch different aliases and the result is their
+  union — the first sees the delimiters the strip is about to delete, the second sees a
+  path the strip *repaired*. `sanitize_prose` itself is unchanged: one staging pass, no
+  transform, byte-identical.
 
 ### Changed
 

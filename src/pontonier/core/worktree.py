@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING
 from pontonier.core import gitdiff, gitproc
 from pontonier.core.redaction import (
     _CONTROL_CHARS_KEEPING_LF_RE,
+    _CONTROL_CHARS_RE,
     _preserving_key_block_failure,
     redact_text,
 )
@@ -958,13 +959,48 @@ def sanitize_prose(text: str | None, aliases: Iterable[str]) -> str | None:
     Redaction remains best-effort by contract (see ``redaction``): an adversarial model can
     always emit an unlabelled secret that no pattern matches. This closes the interaction
     between the two passes, not that broader gap."""
+    return _sanitize_prose(text, aliases)
+
+
+def _sanitize_prose(
+    text: str | None, aliases: Iterable[str], transform: Callable[[str], str] | None = None
+) -> str | None:
+    """:func:`sanitize_prose`, with an optional pass applied to the STAGED text.
+
+    ``transform`` runs after alias staging and before redaction — the only window where a
+    text rewrite can neither break alias matching nor be undone by it. Aliases are already
+    behind alphanumeric placeholders, so a transform that deletes characters cannot damage
+    them; and the transform still runs ahead of the redactor, which is where control-
+    character stripping has to be (see ``redaction.sanitize_echo``).
+
+    Staging runs AGAIN after the transform, against the same placeholders. The two passes
+    catch different aliases and the result is their union: the first sees the delimiters
+    the transform is about to delete, the second sees an alias the transform REPAIRED — a
+    path that carried a control character inside it matches nothing until the character is
+    gone. Running only one of them loses whichever set the other covers, and both sets are
+    real. The second pass cannot disturb the first's work, since a placeholder is not an
+    alias.
+
+    ``None`` (the default) is the plain :func:`sanitize_prose` path, byte-identical to
+    before this parameter existed — one staging pass, no transform."""
     if not text:
         return text
     placeholder = _staged_placeholder(text)
     ambiguous_placeholder = _staged_ambiguous_placeholder(text, placeholder)
-    staged = _replace_aliases(
-        text, aliases, placeholder, ambiguous_replacement=ambiguous_placeholder
-    )
+
+    def stage(value: str) -> str:
+        # `_replace_aliases` is None-tolerant for callers that pass optional text; `value`
+        # is never None here (the empty guard above ran), so coalesce for the type checker.
+        return (
+            _replace_aliases(
+                value, aliases, placeholder, ambiguous_replacement=ambiguous_placeholder
+            )
+            or ""
+        )
+
+    staged = stage(text)
+    if transform is not None:
+        staged = stage(transform(staged))
     redacted = redact_text(staged)
     if not redacted:
         return redacted
@@ -974,46 +1010,54 @@ def sanitize_prose(text: str | None, aliases: Iterable[str]) -> str | None:
 
 
 def sanitize_echo_prose(text: str | None, aliases: Iterable[str]) -> str | None:
-    """:func:`sanitize_prose` for text bound for an ERROR envelope: control characters
-    are deleted ahead of the staging pass.
+    """:func:`sanitize_prose` for text bound for an ERROR envelope: control characters are
+    deleted between the alias staging and the redaction.
 
     Use this instead of :func:`sanitize_prose` wherever the text is a diagnostic being
     echoed back to a caller. A control character defeats BOTH passes this function
-    composes, and for the same reason: each is a match over contiguous text. The
-    redaction half is documented on ``redaction.sanitize_echo``. The relativization half
-    is the mirror image — alias matching is an exact string match, so ``\\x1b`` wedged
-    into the printed worktree path means no alias matches and the dead absolute path
-    rides out whole.
+    composes, and for the same reason: each is a match over contiguous text. The redaction
+    half is documented on ``redaction.sanitize_echo``. The relativization half is the
+    mirror image — alias matching is an exact string match, so ``\\x1b`` wedged into the
+    printed worktree path means no alias matches and the dead absolute path rides out
+    whole.
 
     Stripping the OUTPUT of :func:`sanitize_prose` does not fix either half: by then both
     misses have already happened, and removing the control character merely produces a
-    clean-looking message that still carries the path and the secret. That is why this is
-    one function and not a composition a caller performs — the ordering is not
-    theirs to pick.
+    clean-looking message that still carries the path and the secret.
 
-    LINE FEEDS ARE KEPT HERE, unconditionally — this is the one place the policy differs
-    from ``redaction.sanitize_echo_prose``, which may collapse them. Deleting a line feed
-    joins two lines, and a path that started a line then acquires the previous line's last
-    character in front of it. ``_replace_aliases`` requires a delimiter on the left, so the
-    alias no longer matches and the dead absolute path is disclosed — ``"prefix\\n<root>/f"``
-    collapses to ``"prefix<root>/f"`` and comes back unrelativized. That failure is both
-    common (stderr lines routinely begin with a path) and certain, while what collapsing
-    would buy is catching a secret split at exactly a line feed — rare, and already outside
-    what best-effort redaction promises. So the trade goes the other way here.
+    WHERE the strip goes is the subtle part, and BOTH ends are wrong. Stripping before the
+    staging destroys alias matching from the other side: ``_replace_aliases`` needs a
+    delimiter beside an alias, and a control character is often the delimiter it has —
+    ``"prefix\\t<root>/f.py"`` relativizes correctly until the tab is deleted, after which
+    the alias inherits ``x`` on its left, stops matching, and the dead absolute path is
+    disclosed. Line feed, tab, and carriage return all behave this way. So the strip runs
+    in the one window where neither failure is reachable: AFTER staging (aliases are behind
+    alphanumeric placeholders that deleting characters cannot damage) and BEFORE redaction
+    (where the strip has to be). See :func:`_sanitize_prose`.
+
+    That window is also why this helper can share ``redaction.sanitize_echo_prose``'s
+    newline policy rather than needing one of its own: with aliases already staged,
+    collapsing line feeds can no longer cost a relativization.
 
     ``aliases`` are the real worktree paths and so contain no control characters (this
-    library creates them under a temp root it names itself); stripping the TEXT is
-    therefore what closes the gap, and the aliases are matched as given.
+    library creates them under a temp root it names itself), so they are matched as given.
 
     The key-block guard applies here for the same reason it applies to
-    ``redaction.sanitize_echo``: keeping line feeds does not exempt this helper, because a
-    control character OTHER than a line feed can equally damage an END marker
-    (``-----END … PRIVATE KEY---\\x00--``). Stripping it terminates the block and uncovers
-    what the blanket covered, so the unstripped text's coverage is restored first."""
+    ``redaction.sanitize_echo``: a control character damaging an END marker makes a block
+    look unterminated, so deleting it would terminate the block and uncover everything the
+    fail-closed blanket covered."""
     if not text:
         return text
-    stripped = _CONTROL_CHARS_KEEPING_LF_RE.sub("", text)
-    return sanitize_prose(_preserving_key_block_failure(stripped, text), aliases)
+
+    def view(pattern: re.Pattern[str]) -> str:
+        def transform(staged: str) -> str:
+            return _preserving_key_block_failure(pattern.sub("", staged), staged)
+
+        return _sanitize_prose(text, aliases, transform) or ""
+
+    collapsed = view(_CONTROL_CHARS_RE)
+    keeping_lf = view(_CONTROL_CHARS_KEEPING_LF_RE)
+    return keeping_lf if keeping_lf.replace("\n", "") == collapsed else collapsed
 
 
 def remove(repo: str, worktree: Worktree, *, timeout: int) -> None:

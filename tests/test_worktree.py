@@ -1527,11 +1527,6 @@ def test_sanitize_echo_prose_still_redacts_a_secret_riding_on_a_worktree_path():
     assert "abcdefgh" not in out
 
 
-def test_sanitize_echo_prose_keeps_newlines_in_an_ordinary_diagnostic():
-    out = worktree.sanitize_echo_prose(f"line one\nfailed at {ROOT}/x.py\nline three", ALIASES)
-    assert out == "line one\nfailed at ./x.py\nline three"
-
-
 def test_sanitize_echo_prose_deletes_non_newline_controls():
     out = worktree.sanitize_echo_prose("a\x1b[31mb\nc\x07d", ALIASES)
     assert out == "a[31mb\ncd"
@@ -1548,34 +1543,52 @@ def test_sanitize_echo_prose_is_idempotent():
     assert worktree.sanitize_echo_prose(once, ALIASES) == once
 
 
-def test_sanitize_echo_prose_keeps_line_feeds_so_a_line_initial_alias_still_matches():
-    """Regression: deleting LF disclosed a dead absolute worktree path.
+@pytest.mark.parametrize("delim", ["\n", "\t", "\r", "\x0b", "\x0c"])
+def test_sanitize_echo_prose_relativizes_when_a_control_char_is_the_alias_delimiter(delim):
+    """Regression: stripping BEFORE the staging disclosed a dead absolute worktree path.
 
-    `_replace_aliases` requires a delimiter to the LEFT of an alias. A path that starts a
-    line has one — the line feed — until the line feed is deleted, at which point it
-    inherits the previous line's last character and no longer matches. The absolute path
-    then rides out into the envelope, which is exactly the #420 failure this helper exists
-    to prevent. So this function keeps line feeds unconditionally, unlike its
-    redaction-only sibling.
+    `_replace_aliases` needs a delimiter beside an alias, and a control character is often
+    the delimiter it has — a tab, a carriage return, the line feed that starts the line.
+    Delete it first and the alias inherits the previous character on its left, stops
+    matching, and the absolute path rides out: the #420 failure this helper exists to
+    prevent. Plain `sanitize_prose` handles all of these, so the helper was strictly worse
+    than the function it wraps.
     """
-    text = f"prefix\n{ROOT}/file"
+    text = f"prefix{delim}{ROOT}/file"
     out = worktree.sanitize_echo_prose(text, ALIASES) or ""
     assert ROOT not in out, out
-    assert out == "prefix\n./file"
-    # Positive control: collapsing really is what breaks it, so the assertion above
-    # measures the line-feed policy rather than a path that was never at risk.
-    assert ROOT in (worktree.sanitize_prose(text.replace("\n", ""), ALIASES) or "")
+    # Positive control: deleting the delimiter really is what breaks it, so this measures
+    # the staging order rather than a path that was never at risk.
+    assert ROOT in (worktree.sanitize_prose(text.replace(delim, ""), ALIASES) or "")
 
 
-def test_sanitize_echo_prose_keeps_line_feeds_even_when_a_secret_straddles_one():
-    """The accepted cost of that policy, pinned so it is a decision and not a surprise.
+def test_sanitize_echo_prose_relativizes_an_alias_the_strip_repairs():
+    """The other half of the union, which a single staging pass would lose.
 
-    A secret split at a line feed is not rejoined here, so the redactor does not match it —
-    the same best-effort limit that applies to a secret split by any other character. The
-    alternative (collapsing) trades a rare miss for a certain disclosure of a dead path.
+    A path with a control character INSIDE it matches no alias until the character is
+    gone — the mirror of the delimiter case, and the reason staging runs both before and
+    after the strip. Covering only one of the two would trade one disclosure for another.
     """
+    head, tail = ROOT[:6], ROOT[6:]
+    out = worktree.sanitize_echo_prose(f"failed at {head}\x1b{tail}/f.py", ALIASES) or ""
+    assert ROOT not in out
+    assert out == "failed at ./f.py"
+
+
+def test_sanitize_echo_prose_redacts_a_secret_split_by_a_line_feed():
+    """With aliases staged first, collapsing line feeds can no longer cost a
+    relativization — so this helper shares `redaction.sanitize_echo_prose`'s newline
+    policy instead of needing a weaker one of its own, and a secret split at a line feed
+    is caught rather than accepted as a miss."""
+    secret = "sk-ant-api03-" + "A" * 40
     out = worktree.sanitize_echo_prose("sk-\nant-api03-" + "A" * 40, ALIASES) or ""
-    assert "\n" in out
+    assert secret not in out
+    assert "A" * 40 not in out
+
+
+def test_sanitize_echo_prose_keeps_line_feeds_in_an_untouched_diagnostic():
+    out = worktree.sanitize_echo_prose(f"line one\nfailed at {ROOT}/x.py\nline three", ALIASES)
+    assert out == "line one\nfailed at ./x.py\nline three"
 
 
 @pytest.mark.parametrize("ch", ["\x00", "\x1b", "\x7f", "\x85"])
