@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pontonier.core import gitdiff, gitproc
-from pontonier.core.redaction import redact_text
+from pontonier.core.redaction import _echo_prose, redact_text
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
@@ -967,6 +967,33 @@ def sanitize_prose(text: str | None, aliases: Iterable[str]) -> str | None:
     return redacted.replace(placeholder, ".").replace(
         ambiguous_placeholder, _AMBIGUOUS_SUFFIX_MARKER
     )
+
+
+def sanitize_echo_prose(text: str | None, aliases: Iterable[str]) -> str | None:
+    """:func:`sanitize_prose` for text bound for an ERROR envelope: control characters
+    are deleted ahead of the staging pass, under the newline policy of
+    ``redaction.sanitize_echo_prose``.
+
+    Use this instead of :func:`sanitize_prose` wherever the text is a diagnostic being
+    echoed back to a caller. A control character defeats BOTH passes this function
+    composes, and for the same reason: each is a match over contiguous text. The
+    redaction half is documented on ``redaction.sanitize_echo``. The relativization half
+    is the mirror image — alias matching is an exact string match, so ``\\x1b`` wedged
+    into the printed worktree path means no alias matches and the dead absolute path
+    rides out whole.
+
+    Stripping the OUTPUT of :func:`sanitize_prose` does not fix either half: by then both
+    misses have already happened, and removing the control character merely produces a
+    clean-looking message that still carries the path and the secret. That is why this is
+    one function and not a composition a caller performs — the ordering is not
+    theirs to pick.
+
+    ``aliases`` are the real worktree paths and so contain no control characters (this
+    library creates them under a temp root it names itself); stripping the TEXT is
+    therefore what closes the gap, and the aliases are matched as given."""
+    if not text:
+        return text
+    return _echo_prose(text, lambda t: sanitize_prose(t, aliases))
 
 
 def remove(repo: str, worktree: Worktree, *, timeout: int) -> None:

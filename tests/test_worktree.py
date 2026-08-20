@@ -1479,3 +1479,76 @@ def test_alias_replacement_cannot_abut_an_alphanumeric():
     out = worktree.sanitize_prose(spaced, ALIASES)
     assert out == f"eyJ{'a' * 8} . {'b' * 8} . {'c' * 8}"
     assert ".." not in out
+
+
+# --- sanitize_echo_prose: control characters ahead of the alias staging -------------
+#
+# A control character defeats relativization for the same reason it defeats redaction:
+# alias matching is an exact string match, so `\x1b` wedged into the printed path means
+# no alias matches and the dead absolute worktree path rides out whole. Stripping AFTER
+# `sanitize_prose` cannot fix that — the miss already happened. So the strip belongs
+# ahead of the staging pass, inside one function, not composed by a caller.
+
+
+@pytest.mark.parametrize("ch", ["\x1b", "\x00", "\x07", "\x7f", "\x85"])
+def test_sanitize_echo_prose_relativizes_a_control_split_path(ch):
+    """The #420 guarantee under attack: a bare control character inside the printed
+    worktree path must not smuggle the dead absolute path into an error envelope."""
+    head, tail = ROOT[:6], ROOT[6:]
+    out = worktree.sanitize_echo_prose(f"failed at {head}{ch}{tail}/src/x.py", ALIASES)
+    assert ROOT not in out
+    assert out == "failed at ./src/x.py"
+
+
+@pytest.mark.parametrize("ch", ["\x1b", "\x00", "\x07", "\x7f", "\x85"])
+def test_sanitize_prose_alone_leaks_the_control_split_path(ch):
+    """Positive control for the test above: the un-stripped helper really does leak, so
+    that assertion measures the new behavior rather than an attack that never worked."""
+    head, tail = ROOT[:6], ROOT[6:]
+    attacked = f"failed at {head}{ch}{tail}/src/x.py"
+    assert f"{head}{ch}{tail}" in (worktree.sanitize_prose(attacked, ALIASES) or "")
+
+
+def test_a_printable_escape_payload_still_defeats_relativization():
+    """The honest bound on the guarantee. Deleting the ESC from `\\x1b[0m` leaves the
+    printable `[0m` behind, so the alias STILL does not match and the dead path survives.
+    Stripping buys terminal-rendering safety and closes the bare-control split; it is not
+    a claim that any interpolation can be undone — nothing short of not echoing the text
+    could promise that. Pinned so a future reader does not over-read the docstring."""
+    head, tail = ROOT[:6], ROOT[6:]
+    out = worktree.sanitize_echo_prose(f"failed at {head}\x1b[0m{tail}/src/x.py", ALIASES) or ""
+    assert f"{head}[0m{tail}" in out  # path survives, mangled — but no control character
+    assert "\x1b" not in out
+
+
+def test_sanitize_echo_prose_still_redacts_a_secret_riding_on_a_worktree_path():
+    """The #412 interaction guarantee survives the added strip."""
+    out = worktree.sanitize_echo_prose(f"api_key={ROOT}/abcdefgh", ALIASES)
+    assert "abcdefgh" not in out
+
+
+def test_sanitize_echo_prose_keeps_newlines_in_an_ordinary_diagnostic():
+    out = worktree.sanitize_echo_prose(f"line one\nfailed at {ROOT}/x.py\nline three", ALIASES)
+    assert out == "line one\nfailed at ./x.py\nline three"
+
+
+def test_sanitize_echo_prose_collapses_when_a_newline_splits_a_secret():
+    secret = "sk-ant-api03-" + "A" * 40
+    out = worktree.sanitize_echo_prose("sk-\nant-api03-" + "A" * 40, ALIASES)
+    assert secret not in out
+
+
+def test_sanitize_echo_prose_deletes_non_newline_controls():
+    out = worktree.sanitize_echo_prose("a\x1b[31mb\nc\x07d", ALIASES)
+    assert out == "a[31mb\ncd"
+
+
+@pytest.mark.parametrize("value", [None, ""])
+def test_sanitize_echo_prose_passes_empty_through(value):
+    assert worktree.sanitize_echo_prose(value, ALIASES) == value
+
+
+def test_sanitize_echo_prose_is_idempotent():
+    text = f"boom \x1b[31mRED\x1b[0m at {ROOT}/x.py\napi_key=" + "Z" * 32
+    once = worktree.sanitize_echo_prose(text, ALIASES)
+    assert worktree.sanitize_echo_prose(once, ALIASES) == once

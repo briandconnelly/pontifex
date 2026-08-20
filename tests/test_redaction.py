@@ -6,6 +6,7 @@ import itertools
 import re
 import string
 import time
+import unicodedata
 
 import pytest
 
@@ -3147,3 +3148,163 @@ def test_stream_redactor_redacts_inline_values_and_passes_clean_lines():
     assert token not in out and changed is True
     clean, unchanged = r.redact_line("ordinary stderr noise")
     assert clean == "ordinary stderr noise" and unchanged is False
+
+
+# --- sanitize_echo / sanitize_echo_prose: control characters before redaction --------
+#
+# Redaction is a pattern match over contiguous text, so ANY character wedged into a
+# secret defeats it — verified below across the pattern families. Control characters are
+# the wedge an attacker controls: a repository under review can make an agent CLI print
+# chosen text on stderr, and that stderr is echoed into an error envelope. So an echoed
+# span is stripped of control characters FIRST, then redacted. The reverse order has a
+# mirror-image failure — redaction leaves the split secret alone, and stripping afterwards
+# reassembles it contiguous in the outgoing message.
+
+# Every Unicode Cc code point: C0, DEL, and the C1 block.
+_ALL_CC = [chr(c) for c in list(range(0x20)) + list(range(0x7F, 0xA0))]
+
+# One representative per redaction pattern family, each long enough to match.
+_SECRET_SAMPLES = {
+    "anthropic": "sk-ant-api03-" + "A" * 40,
+    "github": "ghp_" + "a1B2" * 6,
+    "labelled": "api_key=" + "Z" * 32,
+    "bearer": "Authorization: Bearer " + "q7W" * 12,
+    "connection_string": "mongodb+srv://user:" + "P" * 24 + "@host/db",
+}
+
+
+@pytest.mark.parametrize("ch", _ALL_CC, ids=lambda c: f"U+{ord(c):04X}")
+def test_sanitize_echo_deletes_every_cc_code_point(ch):
+    """The whole Cc category goes, not just ESC — C0, DEL, and C1 alike."""
+    out = redaction.sanitize_echo(f"before{ch}after")
+    assert out == "beforeafter"
+
+
+@pytest.mark.parametrize("name", sorted(_SECRET_SAMPLES))
+@pytest.mark.parametrize("ch", ["\x00", "\x07", "\x1b", "\x7f", "\x85", "\n", "\r", "\t"])
+def test_sanitize_echo_redacts_a_control_split_secret(name, ch):
+    """A secret split by a control character must not survive the echo.
+
+    This is the defect the ordering exists for: the split value matches no pattern, so
+    redact-first leaves it whole. Each sample is a positive control — the same secret,
+    contiguous, IS redacted (asserted below), so a pass here measures the ordering rather
+    than a matcher that never fires.
+    """
+    secret = _SECRET_SAMPLES[name]
+    # Wedge the control character a few characters in, inside the value's own run.
+    attacked = secret[:6] + ch + secret[6:]
+    out = redaction.sanitize_echo(attacked)
+    assert secret not in out, out
+    assert not any(unicodedata.category(c) == "Cc" for c in out)
+
+
+@pytest.mark.parametrize("name", sorted(_SECRET_SAMPLES))
+def test_secret_samples_are_redacted_when_contiguous(name):
+    """Positive control for the parametrization above: every sample really is a secret
+    the live matchers catch, so a `secret not in out` assertion there is meaningful."""
+    secret = _SECRET_SAMPLES[name]
+    assert secret not in (redaction.redact_text(secret) or "")
+
+
+def test_sanitize_echo_strips_before_redacting_not_after():
+    """Pin the ORDER, not just the outcome. Stripping after redaction reassembles the
+    secret; this asserts the sanitized output differs from that reversed composition."""
+    attacked = "sk-\x01ant-api03-" + "A" * 40
+    reversed_order = redaction._CONTROL_CHARS_RE.sub("", redaction.redact_text(attacked) or "")
+    assert "sk-ant-api03-" + "A" * 40 in reversed_order  # the reversed order really does leak
+    assert redaction.sanitize_echo(attacked) != reversed_order
+
+
+@pytest.mark.parametrize("value", [None, "", "   "])
+def test_sanitize_echo_handles_empty_input(value):
+    assert redaction.sanitize_echo(value) == (value or "")
+
+
+def test_sanitize_echo_is_idempotent():
+    text = "boom \x1b[31mRED\x1b[0m at api_key=" + "Z" * 32
+    once = redaction.sanitize_echo(text)
+    assert redaction.sanitize_echo(once) == once
+
+
+def test_sanitize_echo_leaves_non_cc_characters_alone():
+    """The guarantee is Cc, precisely. Category Cf (bidi/format controls) and the Zl/Zp
+    separators are NOT Cc and are deliberately out of scope — documented, not forgotten,
+    so nothing downstream advertises 'safe for display'."""
+    # Built from escapes, not literals, so this file itself stays free of the
+    # obfuscating characters the linter rightly refuses in source.
+    text = "caf\u00e9 \u202e rtl \u2028 sep \u200b zwsp"
+    assert redaction.sanitize_echo(text) == text
+
+
+# --- the prose variant: newlines survive when that is provably equivalent -----------
+
+
+def test_sanitize_echo_prose_keeps_newlines_in_an_ordinary_diagnostic():
+    """A multi-line tail is the whole value of a diagnostic; gluing it into one line is a
+    real loss ('not\\nauthorized' -> 'notauthorized'). Newlines are kept when doing so
+    changes nothing else about the sanitized result."""
+    out = redaction.sanitize_echo_prose("line one\nline two\nline three")
+    assert out == "line one\nline two\nline three"
+
+
+def test_sanitize_echo_prose_still_deletes_non_newline_controls():
+    assert redaction.sanitize_echo_prose("a\x1b[31mb\nc\x07d") == "a[31mb\ncd"
+
+
+def test_sanitize_echo_prose_collapses_when_a_newline_splits_a_secret():
+    """Fail-closed: keeping the newline would leave the split secret unredacted, so the
+    helper falls back to the fully-collapsed view — which the redactor CAN match."""
+    secret = "sk-ant-api03-" + "A" * 40
+    out = redaction.sanitize_echo_prose("sk-\nant-api03-" + "A" * 40)
+    assert secret not in out
+    assert "\n" not in out
+
+
+@pytest.mark.parametrize("name", sorted(_SECRET_SAMPLES))
+def test_sanitize_echo_prose_never_leaks_a_newline_split_secret(name):
+    secret = _SECRET_SAMPLES[name]
+    out = redaction.sanitize_echo_prose(secret[:6] + "\n" + secret[6:])
+    assert secret not in out
+
+
+def test_sanitize_echo_prose_keeps_newlines_around_a_redacted_secret():
+    """The safe case must not be over-collapsed: a secret contiguous on its own line is
+    redacted either way, so the surrounding newlines survive."""
+    out = redaction.sanitize_echo_prose("head\napi_key=" + "Z" * 32 + "\ntail")
+    assert out.startswith("head\n") and out.endswith("\ntail")
+    assert "Z" * 32 not in out
+
+
+@pytest.mark.parametrize("value", [None, "", "   "])
+def test_sanitize_echo_prose_handles_empty_input(value):
+    assert redaction.sanitize_echo_prose(value) == (value or "")
+
+
+def test_sanitize_echo_prose_is_idempotent():
+    text = "boom\n\x1b[31mRED\x1b[0m\napi_key=" + "Z" * 32
+    once = redaction.sanitize_echo_prose(text)
+    assert redaction.sanitize_echo_prose(once) == once
+
+
+def test_exc_summary_sanitizes_control_characters():
+    """`exc_summary` feeds error envelopes in every bridge, so it echoes under the same
+    rule as any other diagnostic."""
+    out = redaction.exc_summary(ValueError("boom \x1b[31mRED\x1b[0m"))
+    assert out == "ValueError: boom [31mRED[0m"
+
+
+def test_exc_summary_redacts_a_control_split_secret():
+    secret = "sk-ant-api03-" + "A" * 40
+    assert secret not in redaction.exc_summary(RuntimeError("sk-\x01ant-api03-" + "A" * 40))
+
+
+def test_a_printable_escape_payload_still_defeats_redaction():
+    """The honest bound on the guarantee. Deleting the ESC from `\\x1b[31m` leaves the
+    printable `[31m` behind, so the value is still not contiguous and the redactor still
+    misses it. Stripping buys terminal-rendering safety and closes the BARE-control split;
+    it is not a claim that any interpolation can be undone. Pinned so no downstream
+    docstring over-reads the guarantee."""
+    secret = "sk-ant-api03-" + "A" * 40
+    out = redaction.sanitize_echo(secret[:6] + "\x1b[31m" + secret[6:])
+    assert "[31m" in out and "\x1b" not in out
+    assert secret not in out  # not contiguous, so not reassembled either

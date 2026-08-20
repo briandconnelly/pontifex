@@ -8,6 +8,35 @@ This file is decision history, not current policy. Rules that still bind live in
 
 ## [Unreleased]
 
+### Added
+
+- `redaction.sanitize_echo` and `redaction.sanitize_echo_prose`: sanitize foreign text
+  bound for an error envelope by deleting every Unicode `Cc` code point *before*
+  redacting it. Bridges echo subprocess stderr, config keys, and paths into agent-visible
+  errors, where an escape sequence can recolor, reposition, or erase — and where a
+  control character wedged into a secret defeats the redactor's patterns outright, so the
+  value rides out as plaintext. The order is fixed inside the functions and is not a
+  caller's to choose: redacting first leaves the split value untouched, and stripping
+  afterwards then reassembles the contiguous secret in the outgoing text. `sanitize_echo`
+  is for a single-token span (a config key, a path, a rejected flag name);
+  `sanitize_echo_prose` is for a multi-line diagnostic and keeps line feeds when joining
+  the lines provably reveals nothing the split text hid, falling back to the fully
+  collapsed view when it does. Neither truncates — callers disagree about both the bound
+  and the direction, so each applies its own, after the call.
+- `worktree.sanitize_echo_prose`: the same policy ahead of `sanitize_prose`'s alias
+  staging. A control character defeats relativization for the same reason it defeats
+  redaction — alias matching is an exact string match — so a corrupted worktree path
+  would otherwise ride out into an envelope after the worktree is gone. Stripping the
+  *output* of `sanitize_prose` cannot fix that: by then the miss has already happened.
+
+### Changed
+
+- `redaction.exc_summary` routes its detail through `sanitize_echo_prose` rather than
+  bare `redact_text`. Exception text reaching an envelope is echoed foreign text under
+  the same rule as any other diagnostic. **Bridges: this changes the content of every
+  `exc_summary`-derived error message whose exception text carries a control character** —
+  judge your own fingerprint and breaking status by your own repository's rules.
+
 ### Repository
 
 - `AGENTS.md` gains a **Bridge intake** section: what this library accepts from a

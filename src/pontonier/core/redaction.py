@@ -8,6 +8,10 @@ from __future__ import annotations
 
 import re
 import shlex
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 # Files whose contents are too sensitive to send: their hunks are dropped (the
 # header is kept so a reviewer still sees the file changed).
@@ -1126,10 +1130,105 @@ def redact_text(text: str | None) -> str | None:
     return out
 
 
+# Unicode category Cc — C0 (U+0000-U+001F), DEL (U+007F), and the C1 block
+# (U+0080-U+009F). Exactly that category, no more: Cf (bidi/format controls) and the
+# Zl/Zp separators are NOT covered, so nothing built on these helpers may advertise
+# "safe for display" — only "no Cc".
+_CONTROL_CHARS_RE = re.compile(r"[\x00-\x1F\x7F-\x9F]")
+# The same category minus LF, for the prose variant below.
+_CONTROL_CHARS_KEEPING_LF_RE = re.compile(r"[\x00-\x09\x0B-\x1F\x7F-\x9F]")
+
+
+def sanitize_echo(text: str | None) -> str:
+    """Delete control characters, then redact — for a single-token echoed span.
+
+    Use this for foreign text that is one token: a config key, a file path, a flag or
+    profile name a subprocess rejected. Every Cc code point is deleted outright, so the
+    result is a single line by construction. :func:`sanitize_echo_prose` is the variant
+    for a multi-line diagnostic.
+
+    ORDER IS LOAD-BEARING, and it is strip-then-redact. Redaction is a pattern match over
+    contiguous text, so any character wedged into a secret defeats it — a control
+    character included. Redacting FIRST therefore leaves such a value untouched, and
+    stripping afterwards then REASSEMBLES the contiguous secret in the outgoing text.
+    Stripping first only JOINS fragments while the matcher can still see them, so this
+    order has no mirror-image failure.
+
+    Deletion, not replacement, is what makes that work: substituting a space would leave
+    ``sk- ant-api03-...`` still unmatched, and the plaintext would ride out.
+
+    The bound, stated so nothing downstream over-reads it: this closes the split by a BARE
+    control character. An escape sequence with a printable payload (``\\x1b[31m``) leaves
+    ``[31m`` behind once the ESC is gone, so the value is still not contiguous and the
+    redactor still misses it. What the strip guarantees is that no Cc code point reaches
+    the caller, and that redaction is never handed text it cannot match for a reason this
+    function introduced.
+
+    Truncation is deliberately NOT applied here. Callers bound their own echoes, and they
+    disagree about both the limit and the direction (head or tail); baking one in would
+    silently retighten every one of them. Whatever bound a caller applies belongs AFTER
+    this call, so a secret straddling the cut still has the tail its pattern needs."""
+    if not text:
+        return text or ""
+    return redact_text(_CONTROL_CHARS_RE.sub("", text)) or ""
+
+
+def sanitize_echo_prose(text: str | None) -> str:
+    """Sanitize an echoed multi-line diagnostic, keeping newlines where that is safe.
+
+    Same contract as :func:`sanitize_echo` — Cc deleted before redaction — except that a
+    line feed survives when keeping it is provably equivalent to deleting it. A rolling
+    stderr tail exists to be read; collapsing it into one glued line ("not\\nauthorized"
+    -> "notauthorized") destroys the thing it is for.
+
+    Safety is decided, not assumed, and it fails closed. The question a newline raises is
+    exactly one: does JOINING the lines reveal a secret that the split text hid? So the
+    newline-keeping view is sanitized, its newlines are removed, and the result is offered
+    to the redactor once more. If that second pass finds nothing to change, the newlines
+    hid nothing and the keeping view is returned. If it finds anything, the newlines were
+    load-bearing for a match, and the fully-collapsed view of the ORIGINAL text is
+    returned instead — collapsing the original, not the keeping view, is what makes the
+    split value contiguous where the matcher can still see the whole run.
+
+    The narrower question matters: an "are the two views identical" test would collapse
+    far more often than safety needs, because collapsing lines lets a value run continue
+    past a line boundary and swallow the following line into the redaction. That loses
+    diagnostic text for no security gain.
+
+    This is a policy, not a caller-selectable flag: there is no argument by which a caller
+    can ask for the unsafe half. Choosing between this function and
+    :func:`sanitize_echo` is a choice of what the text IS, not of an ordering."""
+    if not text:
+        return text or ""
+    return _echo_prose(text, redact_text)
+
+
+def _echo_prose(text: str, sanitize: Callable[[str], str | None]) -> str:
+    """The newline policy of :func:`sanitize_echo_prose`, over any text sanitizer.
+
+    Factored out so the worktree-aware echo helper (``worktree.sanitize_echo_prose``,
+    whose sanitizer also relativizes dead worktree paths) runs the SAME decision rather
+    than a second copy of it that can drift. ``sanitize`` must be idempotent — both
+    callers' are, and each pins that with its own test.
+
+    The rule and its rationale live on :func:`sanitize_echo_prose`; do not restate them
+    here."""
+    keeping_lf = sanitize(_CONTROL_CHARS_KEEPING_LF_RE.sub("", text)) or ""
+    joined = keeping_lf.replace("\n", "")
+    if (sanitize(joined) or "") == joined:
+        return keeping_lf
+    return sanitize(_CONTROL_CHARS_RE.sub("", text)) or ""
+
+
 def exc_summary(exc: BaseException) -> str:
-    """Return an exception class plus non-empty redacted detail, if any."""
+    """Return an exception class plus a sanitized non-empty detail, if any.
+
+    The detail is exception text bound for an error envelope, so it goes through
+    :func:`sanitize_echo_prose` rather than bare :func:`redact_text`: a subprocess error
+    can carry a chosen escape sequence, and a control character wedged into a secret
+    defeats redaction outright."""
     name = type(exc).__name__
-    detail = redact_text(str(exc)) or ""
+    detail = sanitize_echo_prose(str(exc))
     return f"{name}: {detail}" if detail.strip() else name
 
 
