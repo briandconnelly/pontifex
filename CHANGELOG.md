@@ -8,8 +8,67 @@ This file is decision history, not current policy. Rules that still bind live in
 
 ## [Unreleased]
 
+### Added
+
+- `redaction.sanitize_echo` and `redaction.sanitize_echo_prose`: sanitize foreign text
+  bound for an error envelope by deleting every Unicode `Cc` code point *before*
+  redacting it. Bridges echo subprocess stderr, config keys, and paths into agent-visible
+  errors, where an escape sequence can recolor, reposition, or erase — and where a
+  control character wedged into a secret defeats the redactor's patterns outright, so the
+  value rides out as plaintext. The order is fixed inside the functions and is not a
+  caller's to choose: redacting first leaves the split value untouched, and stripping
+  afterwards then reassembles the contiguous secret in the outgoing text. `sanitize_echo`
+  is for a single-token span (a config key, a path, a rejected flag name);
+  `sanitize_echo_prose` is for a multi-line diagnostic and keeps line feeds only when
+  removing them yields exactly the fully collapsed view — so the returned text can never
+  show anything collapsing would have hidden. In practice newlines survive in a
+  diagnostic the redactor did not touch across a line boundary; once a redaction meets a
+  boundary the text collapses, deliberately. Neither truncates — callers disagree about
+  both the bound and the direction, so each applies its own, after the call.
+
+  Stripping never discloses more than not stripping. One case would have: deleting a
+  control character out of a damaged `-----END … PRIVATE KEY-----` marker terminates a
+  block that was failing closed, uncovering everything its blanket redaction covered —
+  reachable on purpose by an attacker cancelling a blanket that was protecting someone
+  else's secret further down. Both helpers restore the unstripped text's coverage in that
+  case. The reverse (a repaired `BEGIN` marker, which redacts more) is left alone.
+- `worktree.sanitize_echo_prose`: the same stripping ahead of `sanitize_prose`'s alias
+  staging. A control character defeats relativization for the same reason it defeats
+  redaction — alias matching is an exact string match — so a corrupted worktree path
+  would otherwise ride out into an envelope after the worktree is gone. Stripping the
+  *output* of `sanitize_prose` cannot fix that: by then the miss has already happened.
+
+  WHERE the strip goes is the subtle part, and both ends are wrong. Stripping *before* the
+  staging destroys alias matching from the other side: `_replace_aliases` needs a delimiter
+  beside an alias, and a control character is often the delimiter it has — line feed, tab,
+  and carriage return all behave this way, so `"prefix\t<root>/f.py"` came back with the
+  absolute path intact. So the strip runs in the one window where neither failure is
+  reachable: after staging (aliases sit behind alphanumeric placeholders that deleting
+  characters cannot damage) and before redaction. Staging then runs a second time on the
+  transformed text, because the two passes catch different aliases and the result is their
+  union — the first sees the delimiters the strip is about to delete, the second sees a
+  path the strip *repaired*. `sanitize_prose` itself is unchanged: one staging pass, no
+  transform, byte-identical.
+
+### Changed
+
+- `redaction.exc_summary` routes its detail through `sanitize_echo_prose` rather than
+  bare `redact_text`. Exception text reaching an envelope is echoed foreign text under
+  the same rule as any other diagnostic. **Bridges: this changes the content of every
+  `exc_summary`-derived error message whose exception text carries a control character** —
+  judge your own fingerprint and breaking status by your own repository's rules.
+
 ### Repository
 
+- `AGENTS.md` gains a **Bridge intake** section: what this library accepts from a
+  consuming bridge, and what stays in the bridge. It states the intake criterion, that
+  bridge policy stays downstream, that a mixed change lands in two repositories, that a
+  fix a bridge waits for needs a release and not just a merge, that a change to a value
+  bridges expose is recorded here so each bridge can judge it, and where each half of a
+  change is tested. Previously only the downstream half of that decision was written
+  down, in `codex-in-claude`'s `AGENTS.md`; a bridge could read "send it upstream" with
+  nothing saying what upstream accepts. The two sections link to each other instead of
+  restating each other.
 - The repository now carries an instruction layer: `AGENTS.md` (canonical norms,
   with `CLAUDE.md` pointing at it), `CONTRIBUTING.md` (setup, the gate, commit
   format), `docs/releasing.md`, and `docs/github-config.md` for the enforced

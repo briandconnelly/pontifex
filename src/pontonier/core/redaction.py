@@ -1126,10 +1126,159 @@ def redact_text(text: str | None) -> str | None:
     return out
 
 
+# Unicode category Cc — C0 (U+0000-U+001F), DEL (U+007F), and the C1 block
+# (U+0080-U+009F). Exactly that category, no more: Cf (bidi/format controls) and the
+# Zl/Zp separators are NOT covered, so nothing built on these helpers may advertise
+# "safe for display" — only "no Cc".
+_CONTROL_CHARS_RE = re.compile(r"[\x00-\x1F\x7F-\x9F]")
+# The same category minus LF, for the prose variant below.
+_CONTROL_CHARS_KEEPING_LF_RE = re.compile(r"[\x00-\x09\x0B-\x1F\x7F-\x9F]")
+
+
+def _ends_inside_key_block(text: str) -> bool:
+    """Whether the stateful key-block pass would still be OPEN at the end of ``text``.
+
+    Mirrors :func:`_redact_key_blocks_in_text`'s traversal exactly — same line split, same
+    guard — but keeps only the final state, which is what the fail-closed rule turns on."""
+    in_block = False
+    for line in text.split("\n"):
+        if in_block or _PRIVATE_KEY_BEGIN_RE.search(line):
+            _, _, in_block = _redact_key_content(line, in_block)
+    return in_block
+
+
+def _preserving_key_block_failure(stripped: str, original: str) -> str:
+    """Keep stripping from ever WEAKENING the key-block pass's fail-closed decision.
+
+    The key-block pass redacts an unterminated block to end-of-text. A control character
+    wedged into an END marker is precisely what makes a block look unterminated — so
+    deleting it TERMINATES the block, and everything the blanket used to cover becomes
+    visible. That is the one direction in which stripping can disclose MORE than not
+    stripping, and it is reachable on purpose: an attacker who can influence echoed text
+    can cancel a blanket that was covering someone else's secret further down.
+
+    So when the ORIGINAL text ends inside a block and the stripped text does not, the
+    stripped text is cut back to a BEGIN marker and the remainder replaced by the redaction
+    marker — restoring the coverage the unstripped text had. The reverse case needs
+    nothing: a block the strip OPENS (by repairing a damaged BEGIN) redacts more, not less,
+    and is left alone.
+
+    The cut goes at the LAST BEGIN, not the first. Anchoring at the first would discard
+    every earlier COMPLETED block and all the diagnostic text between them, which the
+    fail-closed state says nothing about — over-redaction well beyond what is being
+    preserved. Anchoring at the last cannot under-redact either: for the last BEGIN to sit
+    inside a still-open block, an earlier BEGIN must have opened it, and the ordinary key
+    pass that runs after this one covers the span between them by its own fail-closed
+    rule."""
+    if not _ends_inside_key_block(original) or _ends_inside_key_block(stripped):
+        return stripped
+    begins = list(_PRIVATE_KEY_BEGIN_RE.finditer(stripped))
+    if not begins:  # pragma: no cover - the original's BEGIN survives stripping
+        return stripped
+    return stripped[: begins[-1].end()] + _SECRET_VALUE_MARKER
+
+
+def sanitize_echo(text: str | None) -> str:
+    """Delete control characters, then redact — for a single-token echoed span.
+
+    Use this for foreign text that is one token: a config key, a file path, a flag or
+    profile name a subprocess rejected. Every Cc code point is deleted outright, so the
+    result is a single line by construction. :func:`sanitize_echo_prose` is the variant
+    for a multi-line diagnostic.
+
+    ORDER IS LOAD-BEARING, and it is strip-then-redact. Redaction is a pattern match over
+    contiguous text, so any character wedged into a secret defeats it — a control
+    character included. Redacting FIRST therefore leaves such a value untouched, and
+    stripping afterwards then REASSEMBLES the contiguous secret in the outgoing text.
+    Stripping first only JOINS fragments while the matcher can still see them, so this
+    order has no mirror-image failure.
+
+    Deletion, not replacement, is what makes that work: substituting a space would leave
+    ``sk- ant-api03-...`` still unmatched, and the plaintext would ride out.
+
+    The bound, stated so nothing downstream over-reads it: this closes the split by a BARE
+    control character. An escape sequence with a printable payload (``\\x1b[31m``) leaves
+    ``[31m`` behind once the ESC is gone, so the value is still not contiguous and the
+    redactor still misses it. What the strip guarantees is that no Cc code point reaches
+    the caller, and that redaction is never handed text it cannot match for a reason this
+    function introduced.
+
+    Stripping must never disclose MORE than not stripping, and one case would have:
+    deleting a control character out of a damaged END marker terminates a key block that
+    was failing closed, uncovering everything the blanket covered. See
+    :func:`_preserving_key_block_failure`, which restores the unstripped text's coverage.
+
+    Truncation is deliberately NOT applied here. Callers bound their own echoes, and they
+    disagree about both the limit and the direction (head or tail); baking one in would
+    silently retighten every one of them. Whatever bound a caller applies belongs AFTER
+    this call, so a secret straddling the cut still has the tail its pattern needs."""
+    if not text:
+        return text or ""
+    stripped = _CONTROL_CHARS_RE.sub("", text)
+    return redact_text(_preserving_key_block_failure(stripped, text)) or ""
+
+
+def sanitize_echo_prose(text: str | None) -> str:
+    """Sanitize an echoed multi-line diagnostic, keeping newlines where that is safe.
+
+    Same contract as :func:`sanitize_echo` — Cc deleted before redaction — except that a
+    line feed survives when keeping it is provably equivalent to deleting it. A rolling
+    stderr tail exists to be read; collapsing it into one glued line ("not\\nauthorized"
+    -> "notauthorized") destroys the thing it is for.
+
+    Safety is decided, not assumed. Two views are sanitized — one with every Cc deleted,
+    one with every Cc *except* LF deleted — and the newline-keeping view is returned only
+    when removing its newlines yields EXACTLY the collapsed view. That equality is the
+    whole guarantee, and it is a proof rather than a heuristic: if the two agree
+    character-for-character modulo newlines, then everything visible in the returned text
+    is visible in the collapsed text, so this can never leak anything unconditional
+    collapsing would have hidden. Any disagreement returns the collapsed view.
+
+    The equality test is deliberately strict, and a narrower one is NOT sound. Asking only
+    "does joining the lines reveal a secret the split text hid?" — sanitize the keeping
+    view, join it, and re-run the sanitizer — looks more permissive at no cost, and it is
+    wrong: with ``api_key=<20 chars>\\n<20 more>``, the keeping view redacts the labelled
+    head, joining it reveals nothing new because the head is already a marker, and the
+    TAIL of the split secret rides out in plaintext — while collapsing the original
+    redacts the whole run. Over-collapsing costs diagnostic text; under-collapsing costs a
+    secret, and the two cases are indistinguishable from outside.
+
+    So the honest summary is narrower than "newlines are kept": newlines survive in a
+    diagnostic the redactor did not touch across a line boundary — which is the ordinary
+    case, and the one a rolling stderr tail lives in. As soon as a redaction interacts
+    with a boundary, the text collapses, and the following line can be swallowed into the
+    redaction. That loss is deliberate.
+
+    This is a policy, not a caller-selectable flag: there is no argument by which a caller
+    can ask for the unsafe half. Choosing between this function and
+    :func:`sanitize_echo` is a choice of what the text IS, not of an ordering.
+
+    Both views are computed from the ORIGINAL text; neither is ever re-sanitized, so
+    :func:`redact_text` does not need to be idempotent for this to hold.
+
+    ``worktree.sanitize_echo_prose`` deliberately does NOT share this policy — deleting a
+    line feed there destroys the delimiter its alias matching needs, disclosing a dead
+    absolute path. See that function; the trade is different because the passes are."""
+    if not text:
+        return text or ""
+
+    def view(pattern: re.Pattern[str]) -> str:
+        return redact_text(_preserving_key_block_failure(pattern.sub("", text), text)) or ""
+
+    collapsed = view(_CONTROL_CHARS_RE)
+    keeping_lf = view(_CONTROL_CHARS_KEEPING_LF_RE)
+    return keeping_lf if keeping_lf.replace("\n", "") == collapsed else collapsed
+
+
 def exc_summary(exc: BaseException) -> str:
-    """Return an exception class plus non-empty redacted detail, if any."""
+    """Return an exception class plus a sanitized non-empty detail, if any.
+
+    The detail is exception text bound for an error envelope, so it goes through
+    :func:`sanitize_echo_prose` rather than bare :func:`redact_text`: a subprocess error
+    can carry a chosen escape sequence, and a control character wedged into a secret
+    defeats redaction outright."""
     name = type(exc).__name__
-    detail = redact_text(str(exc)) or ""
+    detail = sanitize_echo_prose(str(exc))
     return f"{name}: {detail}" if detail.strip() else name
 
 
