@@ -1158,16 +1158,24 @@ def _preserving_key_block_failure(stripped: str, original: str) -> str:
     can cancel a blanket that was covering someone else's secret further down.
 
     So when the ORIGINAL text ends inside a block and the stripped text does not, the
-    stripped text is cut back to its opening marker and the remainder replaced by the
-    redaction marker — restoring exactly the coverage the unstripped text had. The
-    reverse case needs nothing: a block the strip OPENS (by repairing a damaged BEGIN)
-    redacts more, not less, and is left alone."""
+    stripped text is cut back to a BEGIN marker and the remainder replaced by the redaction
+    marker — restoring the coverage the unstripped text had. The reverse case needs
+    nothing: a block the strip OPENS (by repairing a damaged BEGIN) redacts more, not less,
+    and is left alone.
+
+    The cut goes at the LAST BEGIN, not the first. Anchoring at the first would discard
+    every earlier COMPLETED block and all the diagnostic text between them, which the
+    fail-closed state says nothing about — over-redaction well beyond what is being
+    preserved. Anchoring at the last cannot under-redact either: for the last BEGIN to sit
+    inside a still-open block, an earlier BEGIN must have opened it, and the ordinary key
+    pass that runs after this one covers the span between them by its own fail-closed
+    rule."""
     if not _ends_inside_key_block(original) or _ends_inside_key_block(stripped):
         return stripped
-    begin = _PRIVATE_KEY_BEGIN_RE.search(stripped)
-    if begin is None:  # pragma: no cover - the original's BEGIN survives stripping
+    begins = list(_PRIVATE_KEY_BEGIN_RE.finditer(stripped))
+    if not begins:  # pragma: no cover - the original's BEGIN survives stripping
         return stripped
-    return stripped[: begin.end()] + "\n" + _SECRET_VALUE_MARKER
+    return stripped[: begins[-1].end()] + _SECRET_VALUE_MARKER
 
 
 def sanitize_echo(text: str | None) -> str:

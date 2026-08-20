@@ -3360,3 +3360,52 @@ def test_a_repaired_begin_marker_is_left_alone_because_it_redacts_more():
     text = f"-----BEGIN RSA PRIVATE\x00 KEY-----{body}\ntrailing"
     assert body in (redaction.redact_text(text) or "")  # damaged BEGIN: no block at all
     assert body not in redaction.sanitize_echo(text)  # repaired: body redacted
+
+
+def test_key_block_recovery_keeps_earlier_completed_blocks_and_their_diagnostics():
+    """The guard restores the fail-closed blanket without erasing what it never covered.
+
+    Anchoring the cut at the FIRST BEGIN would discard every earlier completed block and
+    all the diagnostic text between them — over-redaction far beyond the state being
+    preserved, in the fields an operator reads to debug. The cut goes at the LAST BEGIN.
+    """
+    text = (
+        "pre\n"
+        "-----BEGIN RSA PRIVATE KEY-----FIRSTBODYAAAAAAAAAAAAAAAA-----END RSA PRIVATE KEY-----\n"
+        "between diagnostic\n"
+        "-----BEGIN RSA PRIVATE KEY-----\nSECONDBODYBBBBBBBBBBBBBBBB\n"
+        "-----END RSA PRIVATE KEY---\x00--\n"
+        "tail diagnostic"
+    )
+    out = redaction.sanitize_echo_prose(text)
+    # Preserved: context the still-open block has no claim on.
+    assert "pre" in out
+    assert "between diagnostic" in out
+    # Still covered: the unterminated block's body and everything after it.
+    assert "SECONDBODYBBBBBBBBBBBBBBBB" not in out
+    assert "tail diagnostic" not in out
+    # Positive control: unstripped, the damaged END really does leave the block open.
+    assert "tail diagnostic" not in (redaction.redact_text(text) or "")
+
+
+def test_key_block_recovery_inserts_no_synthetic_newline():
+    """The recovery marker is appended to the BEGIN line, not put on a line of its own.
+
+    A synthetic newline would be a difference between the two prose views that no input
+    produced, forcing `sanitize_echo_prose` to collapse text it had no reason to collapse.
+    """
+    body = "MIIEowIBAAKCAQEA" + "b" * 40
+    # The END must be DAMAGED, or the guard never fires and this asserts nothing: an
+    # already-unterminated block leaves `stripped` in-block too, which is the early return.
+    text = f"-----BEGIN RSA PRIVATE KEY-----{body}-----END RSA PRIVATE KEY---\x00--"
+    assert _ends_inside_key_block_fired(text), "guard did not fire; test would be vacuous"
+    out = redaction.sanitize_echo(text)
+    assert "\n" not in out, out
+    assert out == "-----BEGIN RSA PRIVATE KEY-----" + redaction._SECRET_VALUE_MARKER
+
+
+def _ends_inside_key_block_fired(text: str) -> bool:
+    """Whether `_preserving_key_block_failure` would actually act on ``text`` — the
+    original ends inside a block and the stripped text does not."""
+    stripped = redaction._CONTROL_CHARS_RE.sub("", text)
+    return redaction._ends_inside_key_block(text) and not redaction._ends_inside_key_block(stripped)
