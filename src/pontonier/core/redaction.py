@@ -1181,19 +1181,28 @@ def sanitize_echo_prose(text: str | None) -> str:
     stderr tail exists to be read; collapsing it into one glued line ("not\\nauthorized"
     -> "notauthorized") destroys the thing it is for.
 
-    Safety is decided, not assumed, and it fails closed. The question a newline raises is
-    exactly one: does JOINING the lines reveal a secret that the split text hid? So the
-    newline-keeping view is sanitized, its newlines are removed, and the result is offered
-    to the redactor once more. If that second pass finds nothing to change, the newlines
-    hid nothing and the keeping view is returned. If it finds anything, the newlines were
-    load-bearing for a match, and the fully-collapsed view of the ORIGINAL text is
-    returned instead — collapsing the original, not the keeping view, is what makes the
-    split value contiguous where the matcher can still see the whole run.
+    Safety is decided, not assumed. Two views are sanitized — one with every Cc deleted,
+    one with every Cc *except* LF deleted — and the newline-keeping view is returned only
+    when removing its newlines yields EXACTLY the collapsed view. That equality is the
+    whole guarantee, and it is a proof rather than a heuristic: if the two agree
+    character-for-character modulo newlines, then everything visible in the returned text
+    is visible in the collapsed text, so this can never leak anything unconditional
+    collapsing would have hidden. Any disagreement returns the collapsed view.
 
-    The narrower question matters: an "are the two views identical" test would collapse
-    far more often than safety needs, because collapsing lines lets a value run continue
-    past a line boundary and swallow the following line into the redaction. That loses
-    diagnostic text for no security gain.
+    The equality test is deliberately strict, and a narrower one is NOT sound. Asking only
+    "does joining the lines reveal a secret the split text hid?" — sanitize the keeping
+    view, join it, and re-run the sanitizer — looks more permissive at no cost, and it is
+    wrong: with ``api_key=<20 chars>\\n<20 more>``, the keeping view redacts the labelled
+    head, joining it reveals nothing new because the head is already a marker, and the
+    TAIL of the split secret rides out in plaintext — while collapsing the original
+    redacts the whole run. Over-collapsing costs diagnostic text; under-collapsing costs a
+    secret, and the two cases are indistinguishable from outside.
+
+    So the honest summary is narrower than "newlines are kept": newlines survive in a
+    diagnostic the redactor did not touch across a line boundary — which is the ordinary
+    case, and the one a rolling stderr tail lives in. As soon as a redaction interacts
+    with a boundary, the text collapses, and the following line can be swallowed into the
+    redaction. That loss is deliberate.
 
     This is a policy, not a caller-selectable flag: there is no argument by which a caller
     can ask for the unsafe half. Choosing between this function and
@@ -1213,11 +1222,9 @@ def _echo_prose(text: str, sanitize: Callable[[str], str | None]) -> str:
 
     The rule and its rationale live on :func:`sanitize_echo_prose`; do not restate them
     here."""
+    collapsed = sanitize(_CONTROL_CHARS_RE.sub("", text)) or ""
     keeping_lf = sanitize(_CONTROL_CHARS_KEEPING_LF_RE.sub("", text)) or ""
-    joined = keeping_lf.replace("\n", "")
-    if (sanitize(joined) or "") == joined:
-        return keeping_lf
-    return sanitize(_CONTROL_CHARS_RE.sub("", text)) or ""
+    return keeping_lf if keeping_lf.replace("\n", "") == collapsed else collapsed
 
 
 def exc_summary(exc: BaseException) -> str:

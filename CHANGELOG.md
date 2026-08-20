@@ -19,10 +19,12 @@ This file is decision history, not current policy. Rules that still bind live in
   caller's to choose: redacting first leaves the split value untouched, and stripping
   afterwards then reassembles the contiguous secret in the outgoing text. `sanitize_echo`
   is for a single-token span (a config key, a path, a rejected flag name);
-  `sanitize_echo_prose` is for a multi-line diagnostic and keeps line feeds when joining
-  the lines provably reveals nothing the split text hid, falling back to the fully
-  collapsed view when it does. Neither truncates — callers disagree about both the bound
-  and the direction, so each applies its own, after the call.
+  `sanitize_echo_prose` is for a multi-line diagnostic and keeps line feeds only when
+  removing them yields exactly the fully collapsed view — so the returned text can never
+  show anything collapsing would have hidden. In practice newlines survive in a
+  diagnostic the redactor did not touch across a line boundary; once a redaction meets a
+  boundary the text collapses, deliberately. Neither truncates — callers disagree about
+  both the bound and the direction, so each applies its own, after the call.
 - `worktree.sanitize_echo_prose`: the same policy ahead of `sanitize_prose`'s alias
   staging. A control character defeats relativization for the same reason it defeats
   redaction — alias matching is an exact string match — so a corrupted worktree path

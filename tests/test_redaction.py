@@ -3267,12 +3267,34 @@ def test_sanitize_echo_prose_never_leaks_a_newline_split_secret(name):
     assert secret not in out
 
 
-def test_sanitize_echo_prose_keeps_newlines_around_a_redacted_secret():
-    """The safe case must not be over-collapsed: a secret contiguous on its own line is
-    redacted either way, so the surrounding newlines survive."""
+def test_sanitize_echo_prose_collapses_once_a_redaction_touches_a_line_boundary():
+    """The deliberate cost of the strict rule, pinned so nobody 'fixes' it into a leak.
+
+    A redaction adjacent to a line boundary makes the two views disagree — collapsing
+    lets the value run continue past the boundary and swallow the following line — so the
+    text collapses and `tail` is lost. That is over-redaction, and it is the safe
+    direction; see the next test for what happens to the code that avoids it.
+    """
     out = redaction.sanitize_echo_prose("head\napi_key=" + "Z" * 32 + "\ntail")
-    assert out.startswith("head\n") and out.endswith("\ntail")
+    assert "\n" not in out
     assert "Z" * 32 not in out
+
+
+def test_sanitize_echo_prose_does_not_keep_newlines_that_strand_a_split_secrets_tail():
+    """Regression for a rule that looked safer and was not.
+
+    Asking only "does joining the lines reveal something new?" passes here — the labelled
+    HEAD is already redacted, so joining changes nothing — and returns the newline-keeping
+    view, in which the split secret's TAIL is plaintext. Unconditional collapsing redacts
+    the whole run. The strict equality rule is what rejects this input.
+    """
+    tail = "S" * 20
+    text = "api_key=" + "A" * 20 + "\n" + tail
+    out = redaction.sanitize_echo_prose(text)
+    assert tail not in out, out
+    # Positive control: collapsing really does hide the tail, so the assertion above is a
+    # comparison against an achievable result rather than an impossible one.
+    assert tail not in (redaction.redact_text(text.replace("\n", "")) or "")
 
 
 @pytest.mark.parametrize("value", [None, "", "   "])
